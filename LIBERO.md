@@ -88,7 +88,7 @@ First, download the LIBERO datasets as mentioned above in the Setup section abov
 
 Then, launch the fine-tuning script with the OFT configuration below, replacing `X` in the first line with the number of GPUs. The command below launches fine-tuning on LIBERO-Spatial with the hyperparameters that we used in our paper. Here, batch size 8 per GPU will require ~62 GB VRAM, and batch size 1 per GPU will require ~25 GB VRAM.
 
-```bash
+```bash 
 torchrun --standalone --nnodes 1 --nproc-per-node X vla-scripts/finetune.py \
   --vla_path openvla/openvla-7b \
   --data_root_dir /PATH/TO/RLDS/DATASETS/DIR/ \

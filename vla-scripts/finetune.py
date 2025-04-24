@@ -60,10 +60,21 @@ from prismatic.vla.constants import (
 )
 from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
+import random
+import numpy as np
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+def seed_everything(seed=42):
+    print(f"Cuda available {torch.cuda.is_available()}")
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 @dataclass
 class FinetuneConfig:
@@ -331,14 +342,13 @@ def run_forward_pass(
             pixel_values=batch["pixel_values"].to(torch.bfloat16).to(device_id),
             labels=batch["labels"],
             output_hidden_states=True,
-            proprio=batch["proprio"] if use_proprio else None,
-            proprio_projector=proprio_projector if use_proprio else None,
-            noisy_actions=noisy_actions if use_diffusion else None,
-            noisy_action_projector=noisy_action_projector if use_diffusion else None,
-            diffusion_timestep_embeddings=diffusion_timestep_embeddings if use_diffusion else None,
-            use_film=use_film,
+            # proprio=batch["proprio"] if use_proprio else None,
+            # proprio_projector=proprio_projector if use_proprio else None,
+            # noisy_actions=noisy_actions if use_diffusion else None,
+            # noisy_action_projector=noisy_action_projector if use_diffusion else None,
+            # diffusion_timestep_embeddings=diffusion_timestep_embeddings if use_diffusion else None,
+            # use_film=use_film,
         )
-
     # Get action masks needed for logging
     ground_truth_token_ids = batch["labels"][:, 1:].to(device_id)
     current_action_mask = get_current_action_mask(ground_truth_token_ids)
@@ -840,7 +850,13 @@ def finetune(cfg: FinetuneConfig) -> None:
     ).to(device_id)
 
     # Set number of images in VLA input
-    vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    try:
+        vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    except AttributeError:
+        print(
+            "Warning: `set_num_images_in_input` method not found in VLA model. "
+            "Please check if the model supports this method."
+        )
 
     # LoRA setup
     if cfg.use_lora:
@@ -891,9 +907,10 @@ def finetune(cfg: FinetuneConfig) -> None:
             "action_head",
             cfg,
             device_id,
-            {"input_dim": vla.module.llm_dim, "hidden_dim": vla.module.llm_dim, "action_dim": ACTION_DIM},
+            {"input_dim": 4096, "hidden_dim": 4096, "action_dim": ACTION_DIM},
             to_bf16=True,
         )
+    # {"input_dim": vla.module.llm_dim, "hidden_dim": vla.module.llm_dim, "action_dim": ACTION_DIM},
 
     # If applicable, instantiate diffusion action head and noisy action projector
     if cfg.use_diffusion:
@@ -915,7 +932,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         )
 
     # Get number of vision patches
-    NUM_PATCHES = vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
+    NUM_PATCHES = vla.module.vision_backbone.featurizer.patch_embed.num_patches # vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
     # If we have proprio inputs, a single proprio embedding is appended to the end of the vision patch embeddings
     if cfg.use_proprio:
         NUM_PATCHES += 1
@@ -1139,4 +1156,11 @@ def finetune(cfg: FinetuneConfig) -> None:
 
 
 if __name__ == "__main__":
+    # import debugpy
+    # debugpy.listen(('0.0.0.0', 5678))
+    # print("Waiting for debugger attach")
+    # debugpy.wait_for_client()
+    
+    seed_everything()
+    
     finetune()

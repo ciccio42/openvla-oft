@@ -27,6 +27,11 @@ from prismatic.vla.datasets.rlds.utils.data_utils import (
     relabel_bridge_actions,
 )
 
+def ur5e_pick_place_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # print("ur5e_pick_place_dataset_transform")
+    trajectory["language_instruction"] = trajectory["traj_metadata"]["language_instruction"]
+    print(f"Language Instruction: {trajectory['language_instruction']}")
+    return trajectory
 
 def bridge_oxe_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -848,6 +853,9 @@ def aloha_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
+    # MIVIA datasets
+    "ur5e_pick_place": ur5e_pick_place_dataset_transform,
+    
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,
     "bridge_dataset": bridge_orig_dataset_transform,

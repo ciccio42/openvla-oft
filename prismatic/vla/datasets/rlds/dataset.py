@@ -14,6 +14,7 @@ import dlimp as dl
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import os
 
 from prismatic.overwatch import initialize_overwatch
 from prismatic.vla.constants import ACTION_DIM, ACTION_PROPRIO_NORMALIZATION_TYPE, ACTION_TOKEN_BEGIN_IDX, IGNORE_INDEX, NUM_ACTIONS_CHUNK, PROPRIO_DIM, STOP_INDEX
@@ -132,7 +133,7 @@ def make_dataset_from_rlds(
         # apply a standardization function, if provided
         if standardize_fn is not None:
             traj = standardize_fn(traj)
-
+        # print(f"Standardized Trajectory: {traj.keys()}")
         if not all(k in traj for k in REQUIRED_KEYS):
             raise ValueError(
                 f"Trajectory is missing keys: {REQUIRED_KEYS - set(traj.keys())}. " "Did you write a `standardize_fn`?"
@@ -199,7 +200,8 @@ def make_dataset_from_rlds(
 
         return traj
 
-    builder = tfds.builder(name, data_dir=data_dir)
+    # builder = tfds.builder(name, data_dir=data_dir)
+    builder = tfds.builder_from_directory(os.path.join(data_dir, name))
 
     # load or compute dataset statistics
     if isinstance(dataset_statistics, str):
