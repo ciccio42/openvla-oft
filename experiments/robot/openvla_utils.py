@@ -294,7 +294,7 @@ def get_vla(cfg: Any) -> torch.nn.Module:
         vla = _apply_film_to_vla(vla, cfg)
 
     # Set number of images in model input
-    vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    # vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
 
     vla.eval()
 
@@ -789,6 +789,8 @@ def get_vla_action(
                 action_head=action_head,
                 use_film=use_film,
             )
+        
+
 
     # Extract subset of actions for open loop steps
     return [action[i] for i in range(min(len(action), cfg.num_open_loop_steps))]

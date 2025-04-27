@@ -152,3 +152,7 @@ data/
 rollouts/
 wandb/
 vla-scripts/*.out
+experiments/robot/robosuite/experiments/*
+experiments/robot/robosuite/*.out
+experiments/robot/robosuite/*.jpg
+experiments/robot/robosuite/*.png
