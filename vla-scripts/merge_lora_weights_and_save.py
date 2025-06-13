@@ -34,8 +34,8 @@ from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, Pr
 class ConvertConfig:
     # fmt: off
 
-    base_checkpoint: Union[str, Path] = ""                   # Base model checkpoint path/dir (either openvla/openvla-7b or whichever model you fine-tuned / resumed training from)
-    lora_finetuned_checkpoint_dir: Union[str, Path] = ""     # Checkpoint directory containing the LoRA adapter
+    base_checkpoint: Union[str, Path] = "/home/rsofnc000/checkpoint_save_folder/open_vla/openvla-7b+ur5e_pick_place_abs_pose+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug--parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img--15000_chkpt"                   # Base model checkpoint path/dir (either openvla/openvla-7b or whichever model you fine-tuned / resumed training from)
+    lora_finetuned_checkpoint_dir: Union[str, Path] = "/home/rsofnc000/checkpoint_save_folder/open_vla/openvla-7b+ur5e_pick_place_abs_pose+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug--parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img--30000_chkpt"     # Checkpoint directory containing the LoRA adapter
 
     # fmt: on
 

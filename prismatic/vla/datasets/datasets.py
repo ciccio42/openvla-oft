@@ -36,7 +36,10 @@ class RLDSBatchTransform:
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
         dataset_name, current_action = rlds_batch["dataset_name"], rlds_batch["action"][0]
-        img = Image.fromarray(rlds_batch["observation"]["image_camera_front_image"][0])
+        if b'ur5e' in dataset_name:
+            img = Image.fromarray(rlds_batch["observation"]["image_camera_front_image"][0])
+        else:
+            img = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
         lang = rlds_batch["task"]["language_instruction"].decode().lower()
         actions = rlds_batch["action"]
 
@@ -79,13 +82,16 @@ class RLDSBatchTransform:
         if self.use_wrist_image:
             all_wrist_pixels = []
             for k in rlds_batch["observation"].keys():
-                if "wrist" in k:
+                if "wrist" in k or "gripper" in k:
                     img_wrist = Image.fromarray(rlds_batch["observation"][k][0])
                     pixel_values_wrist = self.image_transform(img_wrist)
                     all_wrist_pixels.append(pixel_values_wrist)
             return_dict["pixel_values_wrist"] = torch.cat(all_wrist_pixels, dim=0)
         if self.use_proprio and "proprio" in rlds_batch["observation"]:
             proprio = rlds_batch["observation"]["proprio"]
+            return_dict["proprio"] = proprio
+        elif self.use_proprio and b'ur5e' in dataset_name: 
+            proprio = rlds_batch["observation"]["joint_positions"]
             return_dict["proprio"] = proprio
 
         return return_dict
@@ -116,7 +122,7 @@ class RLDSDataset(IterableDataset):
         if "aloha" in self.data_mix:
             load_camera_views = ("primary", "left_wrist", "right_wrist")
         elif "ur5e" in self.data_mix:
-            load_camera_views = ("camera_front_image",)
+            load_camera_views = ("camera_front_image","camera_gripper_image")
         else:
             load_camera_views = ("primary", "wrist")
 

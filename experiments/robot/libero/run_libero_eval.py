@@ -124,6 +124,7 @@ class GenerateConfig:
 
     seed: int = 7                                    # Random Seed (for reproducibility)
 
+    debug: bool = False  
     # fmt: on
 
 
@@ -458,6 +459,12 @@ def run_task(
 @draccus.wrap()
 def eval_libero(cfg: GenerateConfig) -> float:
     """Main function to evaluate a trained policy on LIBERO benchmark tasks."""
+    if cfg.debug:
+        import debugpy
+        debugpy.listen(('0.0.0.0', 5678))
+        print("Waiting for debugger attach")
+        debugpy.wait_for_client()
+    
     # Validate configuration
     validate_config(cfg)
 

@@ -294,7 +294,7 @@ def get_vla(cfg: Any) -> torch.nn.Module:
         vla = _apply_film_to_vla(vla, cfg)
 
     # Set number of images in model input
-    # vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
 
     vla.eval()
 
@@ -741,7 +741,7 @@ def get_vla_action(
         # Collect all input images
         all_images = [obs["full_image"]]
         if cfg.num_images_in_input > 1:
-            all_images.extend([obs[k] for k in obs.keys() if "wrist" in k])
+            all_images.extend([obs[k] for k in obs.keys() if "wrist" in k or 'camera_gripper_image' in k])
 
         # Process images
         all_images = prepare_images_for_vla(all_images, cfg)

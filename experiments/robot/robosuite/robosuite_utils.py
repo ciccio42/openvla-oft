@@ -25,6 +25,13 @@ from PIL import Image
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 from robot_utils import get_action
 
+TASK_CROP = {
+    'pick_place': [20, 25, 80, 75],
+    'nut_assembly': [20, 25, 80, 75],
+    'stack_block': [20, 25, 80, 75],
+    'press_button': [10, 10, 70, 70], 
+}
+
 ENV_OBJECTS = {
     'pick_place': {
         'obj_names': ['greenbox', 'yellowbox', 'bluebox', 'redbox', 'bin'],
@@ -200,6 +207,7 @@ def check_peg(peg_pos: np.array, obj_pos: np.array, current_peg: bool):
 
 def prepare_observation(obs, resize_size, gripper_closed=0):
     img = obs['camera_front_image']
+    eye_in_hand = cv2.flip(obs['eye_in_hand_image'], 1)  # Flip the image horizontally
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
         
@@ -209,6 +217,12 @@ def prepare_observation(obs, resize_size, gripper_closed=0):
     img = tf.image.resize(img, resize_size, method="lanczos3", antialias=True)
     img = tf.cast(tf.clip_by_value(tf.round(img), 0, 255), tf.uint8)
     img = img.numpy()
+    
+    eye_in_hand = tf.image.encode_jpeg(eye_in_hand)  # Encode as JPEG
+    eye_in_hand = tf.io.decode_image(eye_in_hand, expand_animations=False, dtype=tf.uint8)  # Decode back
+    eye_in_hand = tf.image.resize(eye_in_hand, resize_size, method="lanczos3", antialias=True)
+    eye_in_hand = tf.cast(tf.clip_by_value(tf.round(eye_in_hand), 0, 255), tf.uint8)
+    eye_in_hand = eye_in_hand.numpy()
 
     eef_pose = np.zeros(6, dtype=np.float64)
     # convert gripper orientation to end effector orientation
@@ -226,7 +240,8 @@ def prepare_observation(obs, resize_size, gripper_closed=0):
     # Prepare observations dict
     observation = {
         "full_image": img,
-        'joint_positions': obs['joint_pos'],
+        "camera_gripper_image": eye_in_hand,
+        'state': obs['joint_pos'],
         'eef_pose': eef_pose,
         'gripper_closed':gripper_closed, 
     }
@@ -234,8 +249,25 @@ def prepare_observation(obs, resize_size, gripper_closed=0):
     return observation, img
 
 
-def get_action_robosuite(cfg, model, obs, resize_size, gripper_closed, task_description, processor, action_head, proprio_projector, noisy_action_projector, use_film):
+def get_action_robosuite(cfg, model, obs, resize_size, gripper_closed, task_description, processor, action_head, proprio_projector, noisy_action_projector, use_film, task_name='pick_place'):
     # Prepare observation
+    image = obs['camera_front_image']
+    crop_params = TASK_CROP[task_name]
+    
+    top, left = crop_params[0], crop_params[2]
+    img_height, img_width = image.shape[0], image.shape[1]
+    box_h, box_w = img_height - top - crop_params[1], img_width - left - crop_params[3]
+        
+    # Crop the image
+    cropped_image = image[top:top+box_h, left:left+box_w]
+
+    # Optionally resize (define your desired size, e.g., 224x224)
+    desired_height, desired_width = 224, 224
+    resized_image = cv2.resize(cropped_image, (desired_width, desired_height), interpolation=cv2.INTER_LINEAR)
+    obs['camera_front_image'] = resized_image
+    
+    
+    
     observation, img = prepare_observation(obs, resize_size, gripper_closed=gripper_closed)
     
     action = get_action( cfg = cfg,
@@ -251,7 +283,7 @@ def get_action_robosuite(cfg, model, obs, resize_size, gripper_closed, task_desc
     return action
 
 
-def task_run_action(cfg, model, obs, resize_size, gripper_closed, env, task_description, processor, action_head, proprio_projector, noisy_action_projector, use_film):
+def task_run_action(cfg, model, obs, resize_size, gripper_closed, env, task_description, processor, action_head, proprio_projector, noisy_action_projector, use_film, task_name = 'pick_place'):
     
     elapsed_time = 0
     start = time.time()
@@ -265,36 +297,12 @@ def task_run_action(cfg, model, obs, resize_size, gripper_closed, env, task_desc
                         action_head = action_head,
                         proprio_projector = proprio_projector,
                         noisy_action_projector = noisy_action_projector,
-                        use_film = use_film)
+                        use_film = use_film,
+                        task_name = task_name)
     
     end = time.time()
-    elapsed_time = end-start
-    
-    for action in action_chunk:
-        
-        # get current gripper position
-        action_world = np.zeros(7)
-        action_world[0:3] = obs['eef_pos'] + action[0:3]
-        
-        # action_rpy = action[3:6]
-        # action_world[3:6] = quat2axisangle(mat2quat(euler2mat(action_rpy)))
-        current_gripper_orientation = T.quat2axisangle(T.mat2quat(np.reshape(
-                env.sim.data.site_xmat[env.robots[0].eef_site_id], (3, 3))))
-        action_world[3:6] =current_gripper_orientation
-        
-        action_world[6] = 1 if action[6] > 0.99 else -1
-        
-        try:
-            obs, reward, env_done, info = env.step(action_world)
-        except:
-            print("Episode finished!")
-            break
-        
-        image_step = obs['camera_front_image']
-        image_step = Image.fromarray(image_step)
-        image_step.save("step.jpg")
-    
-    return obs, reward, info, action, env_done, elapsed_time
+    elapsed_time = end - start
+    return action_chunk, elapsed_time    
 
 
 #### -------- ---- ---- ---- ---- ---- ---- ---- ---- ####

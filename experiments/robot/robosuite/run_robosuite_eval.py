@@ -43,14 +43,17 @@ with open("command.json", "r") as f:
 # Define task suite constants
 class TaskSuite(str, Enum):
     PICK_PLACE = "ur5e_pick_place"
+    PICK_PLACE_ABS_POSE = "ur5e_pick_place_abs_pose"
     
 #
 class TaskVariation(tuple, Enum):
     PICK_PLACE = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)  # List of variations for the pick and place task
+    PICK_PLACE_ABS_POSE = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
     
 # Define max steps for each task suite
 TASK_MAX_STEPS = {
-    TaskSuite.PICK_PLACE: 220
+    TaskSuite.PICK_PLACE: 220,
+    TaskSuite.PICK_PLACE_ABS_POSE: 220
 }
 
 # Set up logging
@@ -108,9 +111,10 @@ class GenerateConfig:
     wandb_project: str = "your-wandb-project"        # Name of WandB project
 
     seed: int = 7                                    # Random Seed (for reproducibility)
-
+    proprio_dim: int = 6
     controller_path: str = "/home/rsofnc000/Multi-Task-LFD-Framework/repo/openvla-oft/experiments/robot/robosuite/tasks/multi_task_robosuite_env/controllers/config/osc_pose.json"               # Path to custom controller config
     # fmt: on
+    debug: bool = False                           # Whether to run in debug mode (for debugging purposes)
 
 def validate_config(cfg: GenerateConfig) -> None:
     """Validate configuration parameters."""
@@ -136,7 +140,7 @@ def initialize_model(cfg: GenerateConfig):
         proprio_projector = get_proprio_projector(
             cfg,
             model.llm_dim,
-            proprio_dim=8,  # 8-dimensional proprio for LIBERO
+            proprio_dim=cfg.proprio_dim,  # 8-dimensional proprio for LIBERO
         )
 
     # Load action head if needed
@@ -207,6 +211,13 @@ def log_message(message: str, log_file=None):
 
 @draccus.wrap()
 def eval_robosuite(cfg: GenerateConfig) -> float:
+    if cfg.debug:
+        import debugpy
+        debugpy.listen(('0.0.0.0', 5678))
+        print("Waiting for debugger attach")
+        debugpy.wait_for_client()
+    
+    
     """Main function to evaluate a trained policy on LIBERO benchmark tasks."""
     # Validate configuration
     validate_config(cfg)
@@ -227,13 +238,39 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
     # Initialize Robosuite environment
     np.random.seed(42)
     random.seed(42)
+    success_cnt = 0
+    reached_cnt = 0
+    picked_cnt = 0
+    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"seeds.txt"), 'r') as f:
+        lines = f.readlines()
+        seeds = [int(line.strip()) for line in lines]
+    
     for ctr in range(cfg.num_trials_per_task*len(cfg.test_variations)):
         variation_id = cfg.test_variations[ctr % len(cfg.test_variations)]
-        seed = random.getrandbits(32)
+        seed = seeds[ctr % len(seeds)]
         gpu_id = 0
         
         if 'pick_place' in cfg.task_suite_name:
             env_name = 'pick_place'
+        # save trajectory and info
+        save_path = os.path.join(cfg.pretrained_checkpoint, f"rollout_{env_name}")
+        os.makedirs(save_path, exist_ok=True)
+        if os.path.exists(os.path.join(save_path, f"traj_{ctr}.pkl")):
+            print(f"Trajectory {ctr} already exists, skipping...")
+            
+            # load results json file
+            with open(os.path.join(save_path, f"info_{ctr}.json"), "r") as f:
+                info = json.load(f)
+                success_cnt += info['success']
+                reached_cnt += info['reached']
+                picked_cnt += info['picked']
+                print(f"Reached rate: {reached_cnt / (ctr + 1):.2f}")
+                print(f"Picked rate: {picked_cnt / (ctr + 1):.2f}")
+                print(f"Success rate: {success_cnt / (ctr + 1):.2f}")
+            continue
+        
+        
+    
         env = build_env_context(env_name=env_name,
                                 controller_path=cfg.controller_path,
                                 variation=variation_id,
@@ -255,15 +292,15 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
                             proprio_projector=proprio_projector, 
                             noisy_action_projector=noisy_action_projector,
                             processor=processor, 
-                            use_film=cfg.use_film,)
+                            use_film=cfg.use_film,
+                            task_name = env_name)
         
         print("Evaluated traj #{}, task#{}, reached? {} picked? {} success? {} ".format(ctr, variation_id, info['reached'], info['picked'], info['success']))
+        success_cnt += info['success']
+        reached_cnt += info['reached']
+        picked_cnt += info['picked']
         
         traj._data[0][0]['task_description'] = task_description
-        
-        # save trajectory and info
-        save_path = os.path.join(cfg.pretrained_checkpoint, f"rollout_{env_name}")
-        os.makedirs(save_path, exist_ok=True)
         
         if cfg.save:
             pkl.dump(traj, open(os.path.join(save_path, f"traj_{ctr}.pkl"), "wb"))
@@ -271,13 +308,16 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
         # Save info
         with open(os.path.join(save_path, f"info_{ctr}.json"), "w") as f:
             json.dump(info, f, indent=4)
+        
+        print(f"Reached rate: {reached_cnt / (ctr + 1):.2f}")
+        print(f"Picked rate: {picked_cnt / (ctr + 1):.2f}")
+        print(f"Success rate: {success_cnt / (ctr + 1):.2f}")
     
+    print(f"Reached rate: {reached_cnt / ctr:.2f}")
+    print(f"Picked rate: {picked_cnt / ctr:.2f}")
+    print(f"Success rate: {success_cnt / ctr:.2f}")
     
 
 
 if __name__ == "__main__":
-    # import debugpy
-    # debugpy.listen(('0.0.0.0', 5678))
-    # print("Waiting for debugger attach")
-    # debugpy.wait_for_client()
     eval_robosuite()

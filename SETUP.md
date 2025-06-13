@@ -9,7 +9,8 @@ conda activate openvla-oft
 
 # Install PyTorch
 # Use a command specific to your machine: https://pytorch.org/get-started/locally/
-pip3 install torch torchvision torchaudio
+pip install torch==2.2.0+cu118 torchvision==0.16.0+cu118 -f https://download.pytorch.org
+/whl/torch_stable.html
 
 # Clone openvla-oft repo and pip install to download dependencies
 git clone https://github.com/moojink/openvla-oft.git

@@ -1,13 +1,15 @@
 from robosuite_utils import startup_env, check_reach, check_pick, check_bin, task_run_action, ENV_OBJECTS 
 import numpy as np
 from PIL import Image
+from robosuite.utils.transform_utils import quat2mat, mat2euler, euler2mat, quat2axisangle, mat2quat
+
 
 OBJECT_SET = 2
 
 
 def pick_place_eval(cfg, model, env, variation_id, max_T, resize_size, task_description: str,
                     action_head=None, proprio_projector=None, noisy_action_projector=None,
-                    processor=None, use_film=False):
+                    processor=None, use_film=False, task_name = 'pick_place'):
     
 
     start_up_env_return = startup_env(
@@ -75,7 +77,7 @@ def pick_place_eval(cfg, model, env, variation_id, max_T, resize_size, task_desc
         else:
             gripper_closed = 0 if action[-1] == -1 else 1
 
-        obs, reward, info, action, env_done, time_action = task_run_action(cfg = cfg, 
+        action_chunk,  time_action = task_run_action(cfg = cfg, 
                         model = model, 
                         obs = obs, 
                         resize_size = resize_size, 
@@ -87,57 +89,99 @@ def pick_place_eval(cfg, model, env, variation_id, max_T, resize_size, task_desc
                         proprio_projector = proprio_projector, 
                         noisy_action_projector = noisy_action_projector, 
                         use_film = use_film,
+                        task_name = task_name
                         )
+    
+        for action in action_chunk:
+            
+            # get current gripper position
+            action_world = np.zeros(7)
+            if 'abs_pose' in cfg.task_suite_name:
+                action_world[0:3] = action[0:3]
+            else:
+                action_world[0:3] = obs['eef_pos'] + action[0:3]
+            
+            action_rpy = action[3:6]
+            action_world[3:6] = quat2axisangle(mat2quat(euler2mat(-action_rpy)))
+            # current_gripper_orientation = T.quat2axisangle(T.mat2quat(np.reshape(
+            #         env.sim.data.site_xmat[env.robots[0].eef_site_id], (3, 3))))
+            # action_world[3:6] =current_gripper_orientation
+            
+            print(f"action_world {action[6]}")
+            if action[6] >= 0.97:
+                # action_world[2] = action[2] - 0.05
+                action_world[6] = 1
+            else:
+                action_world[6] = -1
+            
+            try:
+                n_steps += 1
+                obs, reward, env_done, info = env.step(action_world)
+                
+                if reward == 1:
+                    print("Success!")
+                elif env_done:
+                    print(f"Episode finished! Env done: {env_done}")
+            except:
+                print("Episode finished! Raised an exception")
+                done = True
+                tasks['success'] = 0
+                break
+        
+            image_step = obs['camera_front_image']
+            image_step = Image.fromarray(image_step)
+            image_step.save("step.jpg")
 
-        current_step = obs['camera_front_image']
-        img = Image.fromarray(current_step)
-        img.save(f"current_step.jpg")
+            # current_step = obs['camera_front_image']
+            # img = Image.fromarray(current_step)
+            # img.save(f"current_step.jpg")
+            
+            
+            traj.append(obs, reward, done, info, action)
+            elapsed_time += time_action
+            
+            tasks['success'] = int(reward or tasks['success'])
         
         
-        traj.append(obs, reward, done, info, action)
-        elapsed_time += time_action
-        
-        tasks['success'] = int(reward or tasks['success'])
-        
-        
-        # check if the object has been placed in a different bin
-        if not tasks['success']:
-            for i, bin_name in enumerate(ENV_OBJECTS['pick_place']['bin_names']):
-                if i != obs['target-box-id']:
-                    bin_pos = obs[f"{bin_name}_pos"]
-                    if check_bin(threshold=0.03,
-                                    bin_pos=bin_pos,
-                                    obj_pos=obs[f"{object_name_target}_pos"],
-                                    current_bin=tasks.get(
-                                        "place_wrong_correct_obj", 0.0)
-                                    ):
-                        tasks["place_wrong_correct_obj"] = 1.0
+            # check if the object has been placed in a different bin
+            if not tasks['success']:
+                for i, bin_name in enumerate(ENV_OBJECTS['pick_place']['bin_names']):
+                    if i != obs['target-box-id']:
+                        bin_pos = obs[f"{bin_name}_pos"]
+                        if check_bin(threshold=0.03,
+                                        bin_pos=bin_pos,
+                                        obj_pos=obs[f"{object_name_target}_pos"],
+                                        current_bin=tasks.get(
+                                            "place_wrong_correct_obj", 0.0)
+                                        ):
+                            tasks["place_wrong_correct_obj"] = 1.0
 
-            for obj_id, obj_name, in enumerate(env.env.obj_names):
-                if obj_id != traj.get(0)['obs']['target-object'] and obj_name != "bin":
-                    for i, bin_name in enumerate(ENV_OBJECTS['pick_place']['bin_names']):
-                        if i != obs['target-box-id']:
-                            bin_pos = obs[f"{bin_name}_pos"]
-                            if check_bin(threshold=0.03,
-                                            bin_pos=bin_pos,
-                                            obj_pos=obs[f"{obj_name}_pos"],
-                                            current_bin=tasks.get(
-                                                "place_wrong_wrong_obj", 0.0)
-                                            ):
-                                tasks["place_wrong_wrong_obj"] = 1.0
-                        else:
-                            bin_pos = obs[f"{bin_name}_pos"]
-                            if check_bin(threshold=0.03,
-                                            bin_pos=bin_pos,
-                                            obj_pos=obs[f"{obj_name}_pos"],
-                                            current_bin=tasks.get(
-                                                "place_correct_bin_wrong_obj", 0.0)
-                                            ):
-                                tasks["place_correct_bin_wrong_obj"] = 1.0
+                for obj_id, obj_name, in enumerate(env.env.obj_names):
+                    if obj_id != traj.get(0)['obs']['target-object'] and obj_name != "bin":
+                        for i, bin_name in enumerate(ENV_OBJECTS['pick_place']['bin_names']):
+                            if i != obs['target-box-id']:
+                                bin_pos = obs[f"{bin_name}_pos"]
+                                if check_bin(threshold=0.03,
+                                                bin_pos=bin_pos,
+                                                obj_pos=obs[f"{obj_name}_pos"],
+                                                current_bin=tasks.get(
+                                                    "place_wrong_wrong_obj", 0.0)
+                                                ):
+                                    tasks["place_wrong_wrong_obj"] = 1.0
+                            else:
+                                bin_pos = obs[f"{bin_name}_pos"]
+                                if check_bin(threshold=0.03,
+                                                bin_pos=bin_pos,
+                                                obj_pos=obs[f"{obj_name}_pos"],
+                                                current_bin=tasks.get(
+                                                    "place_correct_bin_wrong_obj", 0.0)
+                                                ):
+                                    tasks["place_correct_bin_wrong_obj"] = 1.0
 
-        n_steps += 8
-        if env_done or reward or n_steps > max_T:
-            done = True
+            
+            if env_done or reward or n_steps > max_T:
+                done = True
+                break
             
     print(tasks)
     env.close()

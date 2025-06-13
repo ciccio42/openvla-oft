@@ -66,15 +66,15 @@ import numpy as np
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# def seed_everything(seed=42):
-#     print(f"Cuda available {torch.cuda.is_available()}")
-#     random.seed(seed)
-#     np.random.seed(seed)
-#     os.environ["PYTHONHASHSEED"] = str(seed)
-#     torch.manual_seed(seed)
-#     torch.cuda.manual_seed(seed)
-#     torch.backends.cudnn.deterministic = True
-#     torch.backends.cudnn.benchmark = False
+def seed_everything(seed=42):
+    print(f"Cuda available {torch.cuda.is_available()}")
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 @dataclass
 class FinetuneConfig:
@@ -1044,8 +1044,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         "next_actions_accuracy": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
     }
-
-    # Start training
+    
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
@@ -1161,6 +1160,6 @@ if __name__ == "__main__":
     # print("Waiting for debugger attach")
     # debugpy.wait_for_client()
     
-    # seed_everything()
+    seed_everything()
     
     finetune()

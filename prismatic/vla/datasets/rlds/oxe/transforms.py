@@ -31,6 +31,7 @@ def ur5e_pick_place_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, A
     # print("ur5e_pick_place_dataset_transform")
     trajectory["language_instruction"] = trajectory["traj_metadata"]["language_instruction"]
     print(f"Language Instruction: {trajectory['language_instruction']}")
+    trajectory["observation"]["eef_pose"] = trajectory["observation"]["eef_pose"]
     return trajectory
 
 def bridge_oxe_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
@@ -855,6 +856,7 @@ def aloha_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 OXE_STANDARDIZATION_TRANSFORMS = {
     # MIVIA datasets
     "ur5e_pick_place": ur5e_pick_place_dataset_transform,
+    "ur5e_pick_place_abs_pose": ur5e_pick_place_dataset_transform,
     
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,

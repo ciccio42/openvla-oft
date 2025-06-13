@@ -52,10 +52,19 @@ class ActionEncoding(IntEnum):
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
-    "ur5e_pick_place": {
-        "image_obs_keys": {"camera_front_image": "camera_front_image", "secondary": None, "wrist": None},
+    "ur5e_pick_place_abs_pose":  {
+        "image_obs_keys": {"camera_front_image": "camera_front_image", "camera_gripper_image": "camera_gripper_image","secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
-        "state_obs_keys": ["joint_positions", "gripper_closed"],
+        "state_obs_keys": ["eef_pose"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+        },
+    
+    
+    "ur5e_pick_place": {
+        "image_obs_keys": {"camera_front_image": "camera_front_image", "camera_gripper_image": "camera_gripper_image","secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["eef_pose"],
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
         },

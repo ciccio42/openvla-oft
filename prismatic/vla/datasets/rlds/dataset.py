@@ -156,6 +156,7 @@ def make_dataset_from_rlds(
                 new_obs[f"depth_{new}"] = old_obs[old]
 
         if state_obs_keys:
+            print("Extracting proprioceptive observations:", state_obs_keys)
             new_obs["proprio"] = tf.concat(
                 [
                     (
@@ -167,6 +168,7 @@ def make_dataset_from_rlds(
                 ],
                 axis=1,
             )
+            print(new_obs["proprio"])
 
         # add timestep info
         new_obs["timestep"] = tf.range(traj_len)

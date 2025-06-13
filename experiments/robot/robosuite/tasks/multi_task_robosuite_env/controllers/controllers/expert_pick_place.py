@@ -16,7 +16,7 @@ from robosuite.utils.transform_utils import quat2axisangle
 from robosuite.utils import RandomizationError
 import torch
 import os
-import mujoco_py
+# import mujoco_py
 import robosuite.utils.transform_utils as T
 import multi_task_robosuite_env.utils as utils
 from multi_task_robosuite_env import get_env
@@ -251,8 +251,8 @@ class PickPlaceController:
 
 
 def get_expert_trajectory(env_type, controller_type, renderer=False, camera_obs=True, task=None, ret_env=False, seed=None, env_seed=None, gpu_id=0, render_camera="frontview", object_set=1, **kwargs):
-    assert 'gpu' in str(
-        mujoco_py.cymj), 'Make sure to render with GPU to make eval faster'
+    # assert 'gpu' in str(
+    #     mujoco_py.cymj), 'Make sure to render with GPU to make eval faster'
     # reassign the gpu id
     visible_ids = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
     if gpu_id == 3:

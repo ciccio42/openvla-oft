@@ -13,7 +13,7 @@ from robosuite.utils.transform_utils import quat2axisangle
 from robosuite.utils import RandomizationError
 import torch
 import os
-import mujoco_py
+# import mujoco_py
 import robosuite.utils.transform_utils as T
 import multi_task_robosuite_env.utils as utils
 from multi_task_robosuite_env import get_env
