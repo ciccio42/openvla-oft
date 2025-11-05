@@ -156,8 +156,11 @@ experiments/robot/robosuite/experiments/*
 experiments/robot/robosuite/*.out
 experiments/robot/robosuite/*.jpg
 experiments/robot/robosuite/*.png
+experiments/robot/robosuite/images/*
 
 experiments/robot/libero/*.out
 experiments/robot/libero/*.jpg
 experiments/robot/libero/*.png
 *txt
+
+experiments/robot/*

@@ -9,11 +9,24 @@ import shutil
 
 CKPT_FOLDER = "openvla-7b"
 BASE_MODEL_NAME = "openvla-7b"
-RUN_ID_NOTE = "parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img-gripper_img-proprio"
+USE_PROPRIO = True  # Set to True if you want to use proprioceptive data
+OLD_RESUME_STEP = -1  # Set to -1 if you want to start from scratch
 RESUME = False
 RESUME_STEP = 0
-RUN_ROOT_DIR = "/home/rsofnc000/checkpoint_save_folder/open_vla"
-DATASET_NAME = "ur5e_pick_place"
+START_ITERATION = 2  # Starting iteration number
+RUN_ROOT_DIR = "/home/rsofnc000/checkpoint_save_folder/open_vla/new_baseline"
+DATASET_NAME = "ur5e_pick_place_rm_12_13_14_15" 
+# "ur5e_pick_place_rm_12_13_14_15"
+# "ur5e_pick_place_rm_central_spawn" 
+# "ur5e_pick_place_rm_one_spawn" 
+# #"ur5e_pick_place_removed_spawn_regions" 
+# #"ur5e_pick_place_delta_all" 
+# #"ur5e_pick_place_delta_removed_0_5_10_15"
+
+if USE_PROPRIO:
+    RUN_ID_NOTE = f"{DATASET_NAME}_parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img-gripper_img-proprio"
+else:
+    RUN_ID_NOTE = f"{DATASET_NAME}_parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img-gripper_img"
 
 def get_highest_epoch(root_dir, model_name):
     highest_epoch = 0
@@ -42,7 +55,7 @@ def run_merge_lora_weights_script(last_epoch, model_name, new_last_epoch):
     # copy modeling_prismatic.py from base_checkpoint to new_checkpoint
     modeling_prismatic_path = os.path.join(base_checkpoint, "modeling_prismatic.py")
     shutil.copyfile(modeling_prismatic_path, os.path.join(new_checkpoint, "modeling_prismatic.py"))
-    
+    time.sleep(10)  # Ensure the file is copied before running the script
     result = subprocess.run(['sbatch', 'merge_lora_weights_and_save.sh', base_checkpoint, new_checkpoint], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Error running merge_lora_weights_and_save.sh: {result.stderr}")
@@ -71,25 +84,27 @@ def run_merge_lora_weights_script(last_epoch, model_name, new_last_epoch):
 
 def run_bash_script(first_run=False):
     global CKPT_FOLDER, RUN_ID_NOTE, RESUME_STEP, RESUME
-    BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}"]
+    BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}", f"{USE_PROPRIO}"]
     
-    
-    
-    old_resume_step = -1
+    old_resume_step = OLD_RESUME_STEP
    
-    for i in range(2, 20):
-        
+    for i in range(START_ITERATION, 20):
+        print(f"Starting iteration {i} with RESUME_STEP={RESUME_STEP}")
         if i != 1:
             model_name = f"{BASE_MODEL_NAME}+{DATASET_NAME}+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--{RUN_ID_NOTE}"
             new_resume_step = get_highest_epoch(RUN_ROOT_DIR, model_name)    
-            print(f"Highest epoch: {new_resume_step}")        
-            # run merge_lora_weights_and_save.sh
-            run_merge_lora_weights_script(old_resume_step, model_name, new_resume_step)
-            old_resume_step = new_resume_step
-            RESUME_STEP = new_resume_step
-            RESUME = True
-            CKPT_FOLDER=f"{model_name}--{new_resume_step}_chkpt"
-            BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}"]
+            if old_resume_step == new_resume_step:
+                print(f"Old resume step {old_resume_step} is the same as new resume step {new_resume_step}. Skipping merge.")
+            else:
+                print(f"Highest epoch: {new_resume_step}")        
+                # run merge_lora_weights_and_save.sh
+                run_merge_lora_weights_script(old_resume_step, model_name, new_resume_step)
+                old_resume_step = new_resume_step
+                RESUME_STEP = new_resume_step
+                RESUME = True
+            
+            CKPT_FOLDER=f"{model_name}--{RESUME_STEP}_chkpt"
+            BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}", f"{USE_PROPRIO}"]
             print(f"Running bash script with arguments: {BASH_ARGUMENTS}")
         
         

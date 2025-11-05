@@ -90,9 +90,9 @@ class RLDSBatchTransform:
         if self.use_proprio and "proprio" in rlds_batch["observation"]:
             proprio = rlds_batch["observation"]["proprio"]
             return_dict["proprio"] = proprio
-        elif self.use_proprio and b'ur5e' in dataset_name: 
-            proprio = rlds_batch["observation"]["joint_positions"]
-            return_dict["proprio"] = proprio
+        # elif self.use_proprio and b'ur5e' in dataset_name: 
+        #     proprio = rlds_batch["observation"]["joint_positions"]
+        #     return_dict["proprio"] = proprio
 
         return return_dict
 

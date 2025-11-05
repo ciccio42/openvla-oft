@@ -16,6 +16,7 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import tqdm
+import tensorflow as tf
 from accelerate import PartialState
 from huggingface_hub import HfApi, snapshot_download
 from peft import LoraConfig, PeftModel, get_peft_model
@@ -72,9 +73,10 @@ def seed_everything(seed=42):
     np.random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    # tf.random.set_seed(seed)
 
 @dataclass
 class FinetuneConfig:
@@ -267,8 +269,22 @@ def init_module(
     count_parameters(module, module_name)
 
     if cfg.resume:
-        state_dict = load_checkpoint(module_name, cfg.vla_path, cfg.resume_step)
+        # Only rank 0 loads from disk
+        if dist.get_rank() == 0:
+            state_dict = load_checkpoint(module_name, cfg.vla_path, cfg.resume_step)
+        else:
+            state_dict = None
+
+        # Broadcast state_dict to all ranks
+        obj_list = [state_dict]
+        dist.broadcast_object_list(obj_list, src=0)
+        state_dict = obj_list[0]
+
         module.load_state_dict(state_dict)
+
+        # Ensure all ranks finish before moving on
+        dist.barrier()
+
 
     if to_bf16:
         module = module.to(torch.bfloat16)
@@ -785,6 +801,11 @@ def finetune(cfg: FinetuneConfig) -> None:
     cfg.vla_path = cfg.vla_path.rstrip("/")
     print(f"Fine-tuning OpenVLA Model `{cfg.vla_path}` on `{cfg.dataset_name}`")
 
+    if 'rm_12_13_14_15' in cfg.dataset_name:
+        seed_everything(seed=0)
+    else:
+        seed_everything(seed=42)
+
     # Get experiment run ID
     run_id = get_run_id(cfg)
 
@@ -808,7 +829,8 @@ def finetune(cfg: FinetuneConfig) -> None:
         f"\tNUM_ACTIONS_CHUNK: {NUM_ACTIONS_CHUNK}\n"
         f"\tACTION_DIM: {ACTION_DIM}\n"
         f"\tPROPRIO_DIM: {PROPRIO_DIM}\n"
-        f"\tACTION_PROPRIO_NORMALIZATION_TYPE: {ACTION_PROPRIO_NORMALIZATION_TYPE}"
+        f"\tACTION_PROPRIO_NORMALIZATION_TYPE: {ACTION_PROPRIO_NORMALIZATION_TYPE}\n",
+        f"\tUSE PROPRIO: {cfg.use_proprio}",
     )
 
     # Two options:
@@ -1156,10 +1178,10 @@ def finetune(cfg: FinetuneConfig) -> None:
 
 if __name__ == "__main__":
     # import debugpy
-    # debugpy.listen(('0.0.0.0', 5678))
+    # debugpy.listen(('0.0.0.0', 5679))
     # print("Waiting for debugger attach")
     # debugpy.wait_for_client()
     
-    seed_everything()
+    
     
     finetune()

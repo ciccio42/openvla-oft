@@ -19,6 +19,30 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("ur5e_pick_place", 1.0),                                #
     ],
     
+    'ur5e_pick_place_delta_removed_0_5_10_15':[
+        ("ur5e_pick_place_delta_removed_0_5_10_15", 1.0),                                #
+    ],
+    
+    'ur5e_pick_place_delta_all':[
+        ("ur5e_pick_place_delta_all", 1.0),                                #
+    ],
+
+    'ur5e_pick_place_removed_spawn_regions':[
+        ("ur5e_pick_place_removed_spawn_regions", 1.0),                                #
+    ],
+    
+    'ur5e_pick_place_rm_one_spawn':[
+        ("ur5e_pick_place_rm_one_spawn", 1.0),                                #
+    ],
+    
+    'ur5e_pick_place_rm_12_13_14_15':[
+        ("ur5e_pick_place_rm_12_13_14_15", 1.0),                                #
+    ],
+    
+    'ur5e_pick_place_rm_central_spawn':[
+        ("ur5e_pick_place_rm_central_spawn", 1.0),                                #
+    ],
+    
     # === [Moderate-Scale] Bridge++ Mixtures ===
     "bridge_rt_1": [
         # ("bridge_oxe", 1.0)                                   # Version of Bridge V2 in Open-X GCP Bucket

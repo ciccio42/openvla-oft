@@ -144,7 +144,14 @@ class CustomOSCPoseWrapper(Wrapper):
     def step(self, action):
         reward = -100.0
         osc_pose_logger.debug("-------------------------------------------")
-        for _ in range(self.action_repeat):
+        #for _ in range(self.action_repeat):
+        dist = np.inf
+        cnt = 10
+        prev_dist = 0.0
+        #
+        #while dist > 0.004:
+        #for _ in range(self.action_repeat):
+        while dist > 0.004 and cnt > 0:
             # take the current position and gripper orientation with respect to world
             osc_pose_logger.debug(f"Target position {action[:3]}")
             base_pos = self.env.sim.data.site_xpos[self.env.robots[0].eef_site_id]
@@ -155,6 +162,17 @@ class CustomOSCPoseWrapper(Wrapper):
             osc_pose_logger.debug(f"Global delta position {global_action[:3]}")
             obs, reward_t, done, info = self.env.step(global_action)
             reward = max(reward, reward_t)
+            
+            dist = np.linalg.norm(
+                self.env.sim.data.site_xpos[self.env.robots[0].eef_site_id] - action[:3])
+            
+            if round(prev_dist,4) == round(dist,4):
+                # if the distance does not change, the robot is not moving
+                # print(f"Robot is not moving, {dist}")
+                cnt -= 1
+            else:
+                prev_dist = dist
+            
         osc_pose_logger.debug(
             "----------------------------------------------\n\n")
         return self.post_proc_obs(obs, self.env), reward, done, info

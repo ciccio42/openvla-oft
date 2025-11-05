@@ -65,5 +65,5 @@ camera_heights: 200
 camera_widths: 360
 
 # Horizon
-horizon: 1000
+horizon: 100000000
 ignore_done: False

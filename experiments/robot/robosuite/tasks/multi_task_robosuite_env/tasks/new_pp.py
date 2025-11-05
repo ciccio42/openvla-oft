@@ -177,6 +177,36 @@ class PickPlace(SingleArmEnv):
                              'redbox': [0.05, 0.055, 0.045],
                              'bin': [0.64, 0.07, 0.16],
                              'bin_box': [0.15, 0.06, 0.15]}
+        elif self.object_set == 3:
+            self.object_to_id = {"greenbox": 0,
+                                 "orangebox": 1,
+                                 "redbox": 2,
+                                 "greybox": 3}
+            self.obj_names = ["greenbox",
+                              "orangebox",
+                              "redbox",
+                              "greybox"]
+            self._obj_dim = {'greenbox': [0.05, 0.055, 0.045],
+                             'orangebox': [0.05, 0.055, 0.045],
+                             'redbox': [0.05, 0.055, 0.045],
+                             'greybox': [0.05, 0.055, 0.045],
+                             'bin': [0.64, 0.07, 0.16],
+                             'bin_box': [0.15, 0.06, 0.15]}
+        elif self.object_set == 4:
+            self.object_to_id = {"greenbox": 0,
+                                 "yellowbox": 1,
+                                 "bluebox": 2,
+                                 "orange": 3}
+            self.obj_names = ["greenbox",
+                              "yellowbox",
+                              "bluebox",
+                              "orange"]
+            self._obj_dim = {'greenbox': [0.05, 0.055, 0.045],
+                             'yellowbox': [0.05, 0.055, 0.045],
+                             'bluebox': [0.05, 0.055, 0.045],
+                             'orange': [0.05, 0.055, 0.045],
+                             'bin': [0.64, 0.07, 0.16],
+                             'bin_box': [0.15, 0.06, 0.15]}
         else:
             self.init_object_dicts()
 
@@ -387,6 +417,8 @@ class PickPlace(SingleArmEnv):
         elif self.object_set == 2:
             object_seq = (BoxObject, BoxObject, BoxObject, BoxObject)
         elif self.object_set == 3:
+            object_seq = (BoxObject, BoxObject, BoxObject, BoxObject)
+        elif self.object_set == 4:
             object_seq = list()
             for obj_name in self.obj_names:
                 if "nut" in obj_name:

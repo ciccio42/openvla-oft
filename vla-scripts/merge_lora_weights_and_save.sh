@@ -7,6 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=32
+#SBATCH --exclude=gnode14
 #SBATCH --export=ALL
 
 BASE_CHECKPOINT=$1

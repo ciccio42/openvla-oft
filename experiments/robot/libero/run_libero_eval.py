@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
-
+import glob
 import draccus
 import numpy as np
 import tqdm
 from libero.libero import benchmark
-
+from PIL import Image
 import wandb
 
 # Append current directory so that interpreter can find experiments.robot
@@ -124,7 +124,10 @@ class GenerateConfig:
 
     seed: int = 7                                    # Random Seed (for reproducibility)
 
+    run_number: int = 0                                  # Run number (for logging purposes)
     debug: bool = False  
+    change_spawn: bool = True  # Whether to change spawn region of target object in the environment
+    spawn_train_distribution: bool = False  # Whether to use the training spawn distribution for the target object
     # fmt: on
 
 
@@ -294,8 +297,22 @@ def run_episode(
     if initial_state is not None:
         obs = env.set_init_state(initial_state)
     else:
-        obs = env.get_observation()
-
+        # env.set_init_state(initial_state)
+        obs =  env.reset() #env.get_observation()
+        # fix the position of the bin
+        # due to problem with the initialization of the environment
+        # For test with different spawn regions this is not a problem
+        if 'basket_1_pos' in obs.keys():
+            basket_pos = [0.005, 0.261, 0.035]
+            basket_quat = [0.000, 0.000, 0.000, 1.000]  # [x, y, z, w]
+            # env.sim.data.set_joint_qpos()
+            env.sim.data.set_joint_qpos(env.env.objects_dict['basket_1'].joints[0], 
+                                        np.concatenate((basket_pos, basket_quat)))
+            t = 0
+            while t < cfg.num_steps_wait:
+                obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+                t += 1
+            
     # Initialize action queue
     if cfg.num_open_loop_steps != NUM_ACTIONS_CHUNK:
         print(f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match the NUM_ACTIONS_CHUNK "
@@ -305,7 +322,13 @@ def run_episode(
 
     # Setup
     t = 0
-    replay_images = []
+    replay_traj = dict()
+    replay_traj['image'] = []
+    replay_traj['task_command'] = task_description
+    replay_traj['actions'] = []
+    replay_traj['states'] = []
+    
+    
     max_steps = TASK_MAX_STEPS[cfg.task_suite_name]
 
     # Run episode
@@ -320,7 +343,10 @@ def run_episode(
 
             # Prepare observation
             observation, img = prepare_observation(obs, resize_size)
-            replay_images.append(img)
+            replay_traj['image'].append(img)
+            
+            # Append state to replay trajectory
+            replay_traj['states'].append(observation['state'].tolist())
 
             # If action queue is empty, requery model
             if len(action_queue) == 0:
@@ -342,10 +368,13 @@ def run_episode(
             action = action_queue.popleft()
 
             # Process action
+            replay_traj['actions'].append(action.tolist())
             action = process_action(action, cfg.model_family)
 
             # Execute action in environment
             obs, reward, done, info = env.step(action.tolist())
+            pil_img = Image.fromarray(obs['agentview_image'])
+            pil_img.save(os.path.join(cfg.local_log_dir, f"step.png"))
             if done:
                 success = True
                 break
@@ -354,7 +383,7 @@ def run_episode(
     except Exception as e:
         log_message(f"Episode error: {e}", log_file)
 
-    return success, replay_images
+    return success, replay_traj
 
 
 def run_task(
@@ -376,16 +405,40 @@ def run_task(
     task = task_suite.get_task(task_id)
 
     # Get initial states
+    # load default initial states
+    
     initial_states, all_initial_states = load_initial_states(cfg, task_suite, task_id, log_file)
-
+    
     # Initialize environment and get task description
-    env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
-
+    env, task_description = get_libero_env(task, 
+                                           cfg.model_family, 
+                                           resolution=cfg.env_img_res,
+                                           change_spawn=cfg.change_spawn,
+                                           train_spawn_distribution=cfg.spawn_train_distribution)
+    
+    # get the episode already recorded in the environment
+    rollout_dir = f"./rollouts/{cfg.task_suite_name}/change_spawn_{cfg.change_spawn}_train_{cfg.spawn_train_distribution}/run_{cfg.run_number}"
+    episode_full_list = glob.glob(os.path.join(rollout_dir, "*.npy"))
+    len_episode_full_list = len(episode_full_list)
+    episode_number = []
+    for episode in episode_full_list:
+        episode_number.append(int(episode.split("episode=")[-1].split("--")[0]))
+    episode_number.sort()
+    
+    
     # Start episodes
     task_episodes, task_successes = 0, 0
     for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
+        if total_episodes < len_episode_full_list:
+            log_message(f"Skipping episode {total_episodes} as it already exists in {rollout_dir}", log_file)
+            total_episodes += 1
+            continue
+        
         log_message(f"\nTask: {task_description}", log_file)
-
+        # if episode_idx < len_episode_full_list:
+        #     # If the episode already exists, skip it
+        #     log_message(f"Skipping episode {episode_idx} as it already exists in {rollout_dir}", log_file)
+        #     continue
         # Handle initial state
         if cfg.initial_states_path == "DEFAULT":
             # Use default initial state
@@ -406,7 +459,13 @@ def run_task(
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
         # Run episode
-        success, replay_images = run_episode(
+        
+        if cfg.change_spawn:
+            log_message("Setting initial state with changed spawn region...", log_file)
+            initial_state, all_initial_state = None, None
+
+        
+        success, replay_traj = run_episode(
             cfg,
             env,
             task_description,
@@ -429,7 +488,15 @@ def run_task(
 
         # Save replay video
         save_rollout_video(
-            replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
+            replay_traj, 
+            total_episodes, 
+            success=success, 
+            task_description=task_description, 
+            log_file=log_file,
+            dataset_name=cfg.task_suite_name,
+            run=cfg.run_number, 
+            change_spawn=cfg.change_spawn,
+            train_spawn_distribution=cfg.spawn_train_distribution
         )
 
         # Log results

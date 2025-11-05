@@ -44,16 +44,35 @@ with open("command.json", "r") as f:
 class TaskSuite(str, Enum):
     PICK_PLACE = "ur5e_pick_place"
     PICK_PLACE_ABS_POSE = "ur5e_pick_place_abs_pose"
-    
+    PICK_PLACE_DELTA_ALL = "ur5e_pick_place_delta_all"
+    PICK_PLACE_DELTA_REMOVED_0_5_10_15 = "ur5e_pick_place_delta_removed_0_5_10_15"
+    PICK_PLACE_REMOVED_SPAWN_REGIONS_DELTA_ALL = "ur5e_pick_place_removed_spawn_regions"
+    PICK_PLACE_RM_ONE_SPAWN = "ur5e_pick_place_rm_one_spawn"
+    PICK_PLACE_RM_12_13_14_15 = "ur5e_pick_place_rm_12_13_14_15"
+    PICK_PLACE_RM_CENTRAL_SPAWN = "ur5e_pick_place_rm_central_spawn"
 #
-class TaskVariation(tuple, Enum):
-    PICK_PLACE = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)  # List of variations for the pick and place task
-    PICK_PLACE_ABS_POSE = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
-    
+TASK_VARIATION_DICT = {
+    "ur5e_pick_place": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],  # List of variations for the pick and place task
+    "ur5e_pick_place_abs_pose": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "ur5e_pick_place_delta_all": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "ur5e_pick_place_removed_spawn_regions_delta_all": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "ur5e_pick_place_delta_removed_0_5_10_15": [0, 5, 10, 15],  # Variations for the pick and place task with delta removed variations
+    "ur5e_pick_place_rm_one_spawn": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],  # Variations for the pick and place task with one spawn region removed
+    "ur5e_pick_place_rm_12_13_14_15": [12, 13, 14, 15], #[12, 13, 14, 15],  # Variations for the pick and place task with 12, 13, 14, 15 spawn regions removed
+    "ur5e_pick_place_rm_central_spawn": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]  # Variations for the pick and place task with central spawn region removed
+}
+
+
 # Define max steps for each task suite
 TASK_MAX_STEPS = {
-    TaskSuite.PICK_PLACE: 220,
-    TaskSuite.PICK_PLACE_ABS_POSE: 220
+    TaskSuite.PICK_PLACE: 200,
+    TaskSuite.PICK_PLACE_ABS_POSE: 220, 
+    TaskSuite.PICK_PLACE_DELTA_ALL: 200,
+    TaskSuite.PICK_PLACE_DELTA_REMOVED_0_5_10_15: 200,
+    TaskSuite.PICK_PLACE_REMOVED_SPAWN_REGIONS_DELTA_ALL: 200,
+    TaskSuite.PICK_PLACE_RM_ONE_SPAWN: 200,
+    TaskSuite.PICK_PLACE_RM_12_13_14_15: 200,
+    TaskSuite.PICK_PLACE_RM_CENTRAL_SPAWN: 200
 }
 
 # Set up logging
@@ -92,8 +111,8 @@ class GenerateConfig:
     #################################################################################################################
     # Robosuite environment-specific parameters
     #################################################################################################################
-    task_suite_name: str = TaskSuite.PICK_PLACE  # Task suite
-    test_variations: list = TaskVariation.PICK_PLACE
+    task_suite_name: str = TaskSuite.PICK_PLACE_RM_CENTRAL_SPAWN  # Task suite
+    
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
     num_trials_per_task: int = 10                    # Number of rollouts per task
     initial_states_path: str = "DEFAULT"             # "DEFAULT", or path to initial states JSON file
@@ -110,11 +129,16 @@ class GenerateConfig:
     wandb_entity: str = "your-wandb-entity"          # Name of WandB entity
     wandb_project: str = "your-wandb-project"        # Name of WandB project
 
-    seed: int = 7                                    # Random Seed (for reproducibility)
+    seed: int = 42                                    # Random Seed (for reproducibility)
     proprio_dim: int = 6
     controller_path: str = "/home/rsofnc000/Multi-Task-LFD-Framework/repo/openvla-oft/experiments/robot/robosuite/tasks/multi_task_robosuite_env/controllers/config/osc_pose.json"               # Path to custom controller config
     # fmt: on
     debug: bool = False                           # Whether to run in debug mode (for debugging purposes)
+    run_number: int = 0                                  # Run number (for logging purposes)
+    change_spawn_regions: bool = False             # Whether to change spawn regions for the tasks
+    chunk_size: int = NUM_ACTIONS_CHUNK         # Chunk size (number of actions to output at each policy query)
+    change_command: bool = False                   # Whether to change the command for the tasks
+    object_set: int = -1                       # Whether to change the object for the tasks
 
 def validate_config(cfg: GenerateConfig) -> None:
     """Validate configuration parameters."""
@@ -223,8 +247,11 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
     validate_config(cfg)
 
     # Set random seed
-    set_seed_everywhere(cfg.seed)
-
+    if 'rm_12_13_14_15' in cfg.task_suite_name or 'rm_central' in cfg.task_suite_name:
+        set_seed_everywhere(0)
+    else:    
+        set_seed_everywhere(cfg.seed)
+    
     # Initialize model and components
     model, action_head, proprio_projector, noisy_action_projector, processor = initialize_model(cfg)
 
@@ -241,21 +268,23 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
     success_cnt = 0
     reached_cnt = 0
     picked_cnt = 0
-    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"seeds.txt"), 'r') as f:
+    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"seeds/seeds.txt"), 'r') as f:
         lines = f.readlines()
         seeds = [int(line.strip()) for line in lines]
-    
-    for ctr in range(cfg.num_trials_per_task*len(cfg.test_variations)):
-        variation_id = cfg.test_variations[ctr % len(cfg.test_variations)]
+        
+    test_variations = TASK_VARIATION_DICT[cfg.task_suite_name]
+    for ctr in range(cfg.num_trials_per_task*len(test_variations)):
+        variation_id = test_variations[ctr % len(test_variations)]
         seed = seeds[ctr % len(seeds)]
         gpu_id = 0
         
         if 'pick_place' in cfg.task_suite_name:
             env_name = 'pick_place'
         # save trajectory and info
-        save_path = os.path.join(cfg.pretrained_checkpoint, f"rollout_{env_name}")
+        save_path = os.path.join(cfg.pretrained_checkpoint, f"rollout_{env_name}_{cfg.run_number}_{cfg.change_spawn_regions}_obj_set_{cfg.object_set}_change_command_{cfg.change_command}")
         os.makedirs(save_path, exist_ok=True)
-        if os.path.exists(os.path.join(save_path, f"traj_{ctr}.pkl")):
+        print(f"Saving rollout to: {save_path}")
+        if os.path.exists(os.path.join(save_path, f"info_{ctr}.json")):
             print(f"Trajectory {ctr} already exists, skipping...")
             
             # load results json file
@@ -275,12 +304,21 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
                                 controller_path=cfg.controller_path,
                                 variation=variation_id,
                                 seed=seed,
-                                gpu_id=gpu_id)
+                                gpu_id=gpu_id,
+                                object_set=cfg.object_set)
         eval_fn = get_eval_fn(env_name=env_name)
         
 
-        task_description = COMMAND[env_name][str(variation_id)]
-        
+        if cfg.object_set == -1:
+            task_description = COMMAND[env_name][str(variation_id)]
+        else:
+            task_description = COMMAND[f"{env_name}_{cfg.object_set}"][str(variation_id)]
+            
+
+        if cfg.change_command:
+            if 'red' in task_description:
+                task_description = task_description.replace('red', 'orange')
+        print(f"Running Task Description {task_description}")
         traj, info = eval_fn(cfg = cfg,  
                             model = model, 
                             env = env, 
@@ -293,7 +331,8 @@ def eval_robosuite(cfg: GenerateConfig) -> float:
                             noisy_action_projector=noisy_action_projector,
                             processor=processor, 
                             use_film=cfg.use_film,
-                            task_name = env_name)
+                            task_name = env_name,
+                            change_spawn_regions=cfg.change_spawn_regions)
         
         print("Evaluated traj #{}, task#{}, reached? {} picked? {} success? {} ".format(ctr, variation_id, info['reached'], info['picked'], info['success']))
         success_cnt += info['success']

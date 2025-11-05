@@ -21,6 +21,7 @@ import tensorflow as tf
 from robosuite.utils.transform_utils import quat2mat, mat2euler, euler2mat, quat2axisangle, mat2quat
 import time
 from PIL import Image
+import random
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 from robot_utils import get_action
@@ -95,8 +96,17 @@ TASK_MAP = {
     },
 }
 
+def normalize_angle(angle, tol=1e-1):
+    """
+    Normalize angle to (-π, π], where -π wraps to π
+    """
+    norm = (angle + np.pi) % (2 * np.pi) - np.pi
+    if np.isclose(norm, -np.pi, atol=tol):
+        norm = np.pi
+    return norm
 
-def build_env_context(env_name: str, controller_path: str, variation: int, seed: int, gpu_id: int):
+
+def build_env_context(env_name: str, controller_path: str, variation: int, seed: int, gpu_id: int, object_set: int):
     # load custom controller
     controller = load_controller_config(
         custom_fpath=controller_path)
@@ -114,7 +124,7 @@ def build_env_context(env_name: str, controller_path: str, variation: int, seed:
                        ret_env=True,
                        seed=seed,
                        gpu_id=gpu_id,
-                       object_set=TASK_MAP[env_name]['object_set'])
+                       object_set=TASK_MAP[env_name]['object_set'] if object_set == -1 else object_set)
     
     return agent_env
     
@@ -135,7 +145,7 @@ def get_eval_fn(env_name):
         assert NotImplementedError
         
         
-def startup_env(model,env,variation_id):
+def startup_env(model,env,variation_id, spawn_region=None):
 
     done, states, images = False, [], []
     states = deque(states, maxlen=1)
@@ -144,15 +154,53 @@ def startup_env(model,env,variation_id):
     while True:
         try:
             obs = env.reset()
-            cv2.imwrite("pre_set.jpg", obs['camera_front_image'])
+            cv2.imwrite("pre_change.jpg", obs['camera_front_image'][:,:, ::-1])
+           
+            if spawn_region is not None:
+                target_obj_name = env.objects[env.object_id].name.lower()
+                target_obj_pos = obs[f"{target_obj_name}_pos"]
+                target_obj_quat = obs[f"{target_obj_name}_quat"]
+                # check if the object is not in the OOD spawn region
+                if not(target_obj_pos[1] <= spawn_region[0] and target_obj_pos[1] >= spawn_region[1]):
+                    print(f"Object {target_obj_name} is not in the OOD spawn region {spawn_region}, ")
+                    
+                    for obj_id in range(len(env.objects)):
+                        if obj_id == env.object_id:
+                            continue
+                        object_name_to_change = env.objects[obj_id].name.lower()
+                        object_pos = obs[f"{object_name_to_change}_pos"]
+                        object_quat = obs[f"{object_name_to_change}_quat"]
+                        
+                        # check if the object is in the OOD spawn region
+                        if object_pos[1] <= spawn_region[0] and object_pos[1] >= spawn_region[1]:
+                            print(f"Object {object_name_to_change} is in the OOD spawn region {spawn_region}, ")
+                            break
+                        
+                        
+                    new_obj_pos =  obs[f"{object_name_to_change}_pos"]
+                    new_obj_quat = obs[f"{object_name_to_change}_quat"]
+                    
+                    # set position of the target objects
+                    env.sim.data.set_joint_qpos(env.objects[env.object_id].joints[0], 
+                                                np.concatenate([new_obj_pos, new_obj_quat]))  
+
+                    # set the position of the other object
+                    env.sim.data.set_joint_qpos(env.objects[obj_id].joints[0],
+                                                np.concatenate([target_obj_pos, target_obj_quat]))
+                        
+
+            cv2.imwrite("pre_set.jpg", obs['camera_front_image'][:,:, ::-1])
             # make a "null step" to stabilize all objects
             current_gripper_position = env.sim.data.site_xpos[env.robots[0].eef_site_id]
             current_gripper_orientation = T.quat2axisangle(T.mat2quat(np.reshape(
                 env.sim.data.site_xmat[env.robots[0].eef_site_id], (3, 3))))
             current_gripper_pose = np.concatenate(
                 (current_gripper_position, current_gripper_orientation, np.array([-1])), axis=-1)
-            obs, reward, env_done, info = env.step(current_gripper_pose)
-
+            i = 0   
+            while i < 5:
+                obs, reward, env_done, info = env.step(current_gripper_pose)
+                cv2.imwrite("post_set.jpg", obs['camera_front_image'][:,:, ::-1])
+                i+=1
             break
         except:
             pass
@@ -166,7 +214,7 @@ def startup_env(model,env,variation_id):
 
 
 def check_pick(threshold: float, obj_z: float, start_z: float, reached: bool, picked: bool):
-    return picked or (reached and obj_z - start_z > threshold)
+    return picked or (reached and abs(obj_z - start_z) > threshold)
 
 
 def check_reach(threshold: float, obj_distance: np.array, current_reach: bool):
@@ -231,18 +279,27 @@ def prepare_observation(obs, resize_size, gripper_closed=0):
                                     [1.0, .0, .0], 
                                     [.0, .0, 1.0]])
     eef_mat = R_ee_to_gripper @ quat2mat(eef_quat)
-    eef_euler = mat2euler(eef_mat)
+    eef_euler = [normalize_angle(a) for a in mat2euler(eef_mat)]
+    # print(f"EEF Euler State: {eef_euler}")
     eef_pose[0:3] = obs['eef_pos']
     eef_pose[3:6] = eef_euler
     eef_pose = np.array(eef_pose, dtype=np.float64)
 
 
     # Prepare observations dict
+    if gripper_closed == 0:
+        gripper_closed = np.array([0.0, 0.0], dtype=np.float64)
+    else:
+        gripper_closed = np.array([0.0, 1.0], dtype=np.float64)
+    
+    state = np.zeros(8, dtype=np.float64)
+    state[0:6] = eef_pose
+    state[6:8] = gripper_closed
     observation = {
         "full_image": img,
         "camera_gripper_image": eye_in_hand,
-        'state': obs['joint_pos'],
-        'eef_pose': eef_pose,
+        'state': state,
+        'EEF_pose': eef_pose,
         'gripper_closed':gripper_closed, 
     }
     
