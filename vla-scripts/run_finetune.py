@@ -22,6 +22,7 @@ DATASET_NAME = "ur5e_pick_place_rm_12_13_14_15"
 # #"ur5e_pick_place_removed_spawn_regions" 
 # #"ur5e_pick_place_delta_all" 
 # #"ur5e_pick_place_delta_removed_0_5_10_15"
+DATASET_FOLDER="/home/rsofnc000/Multi-Task-LFD-Framework/repo/open_x_embodiment/datasets"
 
 if USE_PROPRIO:
     RUN_ID_NOTE = f"{DATASET_NAME}_parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img-gripper_img-proprio"
@@ -84,7 +85,7 @@ def run_merge_lora_weights_script(last_epoch, model_name, new_last_epoch):
 
 def run_bash_script(first_run=False):
     global CKPT_FOLDER, RUN_ID_NOTE, RESUME_STEP, RESUME
-    BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}", f"{USE_PROPRIO}"]
+    BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}", f"{USE_PROPRIO}", f"{DATASET_FOLDER}"]
     
     old_resume_step = OLD_RESUME_STEP
    
@@ -104,7 +105,7 @@ def run_bash_script(first_run=False):
                 RESUME = True
             
             CKPT_FOLDER=f"{model_name}--{RESUME_STEP}_chkpt"
-            BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}", f"{USE_PROPRIO}"]
+            BASH_ARGUMENTS = [f"{CKPT_FOLDER}", f"{RUN_ID_NOTE}", f"{RESUME}", f"{RESUME_STEP}", f"{RUN_ROOT_DIR}", f"{DATASET_NAME}", f"{USE_PROPRIO}", f"{DATASET_FOLDER}"]
             print(f"Running bash script with arguments: {BASH_ARGUMENTS}")
         
         

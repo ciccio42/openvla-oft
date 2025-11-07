@@ -21,6 +21,7 @@ RESUME_STEP="${4:-0}"
 RUN_ROOT_DIR="${5:-/home/rsofnc000/checkpoint_save_folder/open_vla}"
 DATASET_NAME="${6:-ur5e_pick_place_abs_pose}"
 USE_PROPRIO="${7:-True}"
+DATASET_FOLDER="${8:-/home/rsofnc000/Multi-Task-LFD-Framework/repo/open_x_embodiment/datasets}"
 
 echo "Using checkpoint folder: $CKPT_FOLDER"
 echo "Run ID note: $RUN_ID_NOTE"
@@ -36,7 +37,7 @@ echo "Using MASTER_PORT=$MASTER_PORT"
 
 srun torchrun --standalone --nnodes 1 --nproc-per-node 4 --master-port $MASTER_PORT finetune.py \
     --vla_path  ${RUN_ROOT_DIR}/${CKPT_FOLDER} \
-    --data_root_dir /home/rsofnc000/Multi-Task-LFD-Framework/repo/open_x_embodiment/datasets \
+    --data_root_dir  ${DATASET_FOLDER} \
     --dataset_name $DATASET_NAME \
     --run_root_dir $RUN_ROOT_DIR \
     --use_l1_regression True \
