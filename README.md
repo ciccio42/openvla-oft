@@ -75,6 +75,8 @@ See [SETUP.md](SETUP.md) for instructions on setting up the conda environment.
 
 ## Training and Evaluation
 
+See [VLA-Benchmark.md](VLA-Benchmark.md) for fine-tuning/evaluatin on VLA-Benchmark task suites
+
 See [LIBERO.md](LIBERO.md) for fine-tuning/evaluating on LIBERO simulation benchmark task suites.
 
 See [ALOHA.md](ALOHA.md) for fine-tuning/evaluating on real-world ALOHA robot tasks.

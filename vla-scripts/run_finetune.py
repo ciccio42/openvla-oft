@@ -13,7 +13,7 @@ USE_PROPRIO = True  # Set to True if you want to use proprioceptive data
 OLD_RESUME_STEP = -1  # Set to -1 if you want to start from scratch
 RESUME = False
 RESUME_STEP = 0
-START_ITERATION = 2  # Starting iteration number
+START_ITERATION = 1  # Starting iteration number
 RUN_ROOT_DIR = "/home/rsofnc000/checkpoint_save_folder/open_vla/new_baseline"
 DATASET_NAME = "ur5e_pick_place_rm_12_13_14_15" 
 # "ur5e_pick_place_rm_12_13_14_15"
