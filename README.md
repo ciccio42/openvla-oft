@@ -1,5 +1,8 @@
 # Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success
 
+# Note
+This is a fork from the original TinyVLA project
+
 **Project website: https://openvla-oft.github.io/**
 
 **Paper: https://arxiv.org/abs/2502.19645**
@@ -87,7 +90,7 @@ If you run into any issues, please open a new GitHub issue. If you do not receiv
 
 ## Citation
 
-If you use our code in your work, please cite [our paper](https://arxiv.org/abs/2502.19645):
+This is a fork from the original repository of the following work.
 
 ```bibtex
 @article{kim2025fine,
