@@ -3,14 +3,11 @@
 #SBATCH --account=did_robot_learning_359
 #SBATCH --job-name=openvla_libero_eval
 #SBATCH --partition=gpuq
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --exclusive
-#SBATCH --time=6:59:00
-#SBATCH --array=0-2  # Esegue 3 job (seed 0, 1, 2)
+#SBATCH --cpus-per-task=16
+#SBATCH --array=0 # Esegue 3 job (seed 0, 1, 2)
 #SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/eval_libero_goal_seed_%a_%j.out
 #SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/eval_libero_goal_seed_%a_%j.err
 
@@ -61,7 +58,7 @@ python run_libero_eval.py \
     --env_img_res 256 \
     --seed ${SEED} \
     --change_command True \
-    --command_level default \
+    --command_level l3 \
     --run_id_note ${ID_NOTE} \
     --local_log_dir /mnt/beegfs/a.cardamone7/outputs/logs
 

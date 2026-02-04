@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+import gc
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
@@ -70,7 +71,7 @@ class TaskSuite(str, Enum):
 TASK_MAX_STEPS = {
     TaskSuite.LIBERO_SPATIAL: 220,  # longest training demo has 193 steps
     TaskSuite.LIBERO_OBJECT: 280,  # longest training demo has 254 steps
-    TaskSuite.LIBERO_GOAL: 200,  # longest training demo has 270 steps
+    TaskSuite.LIBERO_GOAL: 300,  # longest training demo has 270 steps
     TaskSuite.LIBERO_10: 520,  # longest training demo has 505 steps
     TaskSuite.LIBERO_90: 400,  # longest training demo has 373 steps
 }
@@ -120,6 +121,7 @@ class GenerateConfig:
     # LIBERO environment-specific parameters
     #################################################################################################################
     task_suite_name: str = TaskSuite.LIBERO_GOAL  # Task suite
+    task_id: Optional[int] = None                    # Specific task ID to evaluate (0-indexed). If None, evaluate all tasks
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
     num_trials_per_task: int = 50                    # Number of rollouts per task
     initial_states_path: str = "DEFAULT"             # "DEFAULT", or path to initial states JSON file
@@ -498,7 +500,7 @@ def run_task(
             log_file=log_file,
             change_command=cfg.change_command,
             command_level=cfg.command_level,
-            run=27012026
+            run=cfg.run_id_note
         )
 
         # Log results
@@ -521,6 +523,17 @@ def run_task(
                 f"num_episodes/{task_description}": task_episodes,
             }
         )
+
+    # Close environment and force cleanup to prevent EGL context leaks
+    try:
+        env.close()
+        log_message("Environment closed successfully", log_file)
+    except Exception as e:
+        log_message(f"Warning: Error closing environment: {e}", log_file)
+    
+    # Force garbage collection to free GPU memory
+    gc.collect()
+    log_message("Forced garbage collection after task", log_file)
 
     return total_episodes, total_successes, task_description, task_success_rate, task_episodes
 
@@ -648,6 +661,9 @@ def eval_libero(cfg: GenerateConfig) -> float:
         cfg.command_level = level
         cfg.change_command = (level is not None)
         
+        # Reset seed for each level to ensure reproducibility
+        set_seed_everywhere(cfg.seed)
+        
         # Setup logging for this level
         log_file, local_log_filepath, run_id = setup_logging(cfg)
         
@@ -662,7 +678,19 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
         # Start evaluation for this level
         total_episodes, total_successes = 0, 0
-        for task_id in tqdm.tqdm(range(num_tasks), desc=f"Level {current_level_name}"):
+        
+        # Determine which tasks to evaluate
+        if cfg.task_id is not None:
+            # Evaluate only specified task
+            if cfg.task_id < 0 or cfg.task_id >= num_tasks:
+                raise ValueError(f"task_id {cfg.task_id} out of range [0, {num_tasks-1}]")
+            task_ids = [cfg.task_id]
+            log_message(f"Evaluating only task {cfg.task_id}", log_file)
+        else:
+            # Evaluate all tasks
+            task_ids = range(num_tasks)
+        
+        for task_id in tqdm.tqdm(task_ids, desc=f"Level {current_level_name}"):
             # Cattura anche i risultati per task
             total_episodes, total_successes, task_name, task_sr, task_eps = run_task(
                 cfg,

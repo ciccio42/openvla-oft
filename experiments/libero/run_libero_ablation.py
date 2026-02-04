@@ -71,7 +71,7 @@ class TaskSuite(str, Enum):
     LIBERO_GOAL = "libero_goal"
 
 TASK_MAX_STEPS = {
-    TaskSuite.LIBERO_GOAL: 200,
+    TaskSuite.LIBERO_GOAL: 300,
 }
 
 

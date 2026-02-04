@@ -8,9 +8,9 @@ import debugpy
 import glob
 import pickle as pkl
 
-TABLE_SIZE = (0.7, 0.7)  # height (y), width (x)
+TABLE_SIZE = (1.0, 1.0)  # height (y), width (x)
 
-def heat_map(task_distribution, task_path, task_name, model_name):
+def heat_map(task_distribution, task_path, task_name, model_name, command_level="DEFAULT"):
     # Each px represents 0.5x0.5 cm (0.005m x 0.005m)
     px_resolution = 0.5  # in cm
 
@@ -46,7 +46,7 @@ def heat_map(task_distribution, task_path, task_name, model_name):
             table_map[x, y] += 1
 
     # Set crop range in cm for visual focus (adjust as needed)
-    y_min, y_max = -30, 30
+    y_min, y_max = -45, 20
     x_min, x_max = -35, 35
     task_title = task_name.replace("_", " ").title()
 
@@ -60,8 +60,8 @@ def heat_map(task_distribution, task_path, task_name, model_name):
     cropped_map = table_map[y_min_px:y_max_px, x_min_px:x_max_px]
 
     # --- Plotting ---
-    fig, ax = plt.subplots(figsize=(10, 10))
-    plt.title(f"Command: '{task_title}' - Model: {model_name}")
+    fig, ax = plt.subplots(figsize=(10, 14))
+    plt.title(f"[{command_level.upper()}] \"{task_title}\"")
     plt.xlabel("Y Axis (cm)")
     plt.ylabel("X Axis (cm)")
 
@@ -99,6 +99,20 @@ def process_rollout_folder(test_path, model_name, dataset_config=None):
     print(f"Processing: {test_path}")
     print(f"Model: {model_name}")
     print(f"{'='*80}\n")
+    
+    # Extract command level from path
+    if "command_l1" in test_path or "/command_l1" in test_path:
+        command_level = "L1"
+    elif "command_l2" in test_path or "/command_l2" in test_path:
+        command_level = "L2"
+    elif "command_l3" in test_path or "/command_l3" in test_path:
+        command_level = "L3"
+    elif "ablation" in test_path.lower():
+        command_level = "ABLATION"
+    else:
+        command_level = "DEFAULT"
+    
+    print(f"Command level: {command_level}\n")
     
     run_folders = glob.glob(os.path.join(test_path, "run_*"))
     
@@ -146,7 +160,7 @@ def process_rollout_folder(test_path, model_name, dataset_config=None):
     if tasks_trajectories:
         for task_name, episodes in tasks_trajectories.items():
             print(f"Creating heatmap for task: {task_name} with {len(episodes)} episodes")
-            heat_map(episodes, test_path, task_name, model_name)
+            heat_map(episodes, test_path, task_name, model_name, command_level)
     else:
         print(f"WARNING: No trajectories found in {test_path}")
 
@@ -157,7 +171,7 @@ if __name__ == "__main__":
     argparser.add_argument('--dataset_config', type=str, default=None, 
                           help="Path to dataset_stats.pkl for denormalization (optional)")
     argparser.add_argument('--base_path', type=str, 
-                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/openvla-oft",
+                          default="/home/A.CARDAMONE7/outputs/rollouts/libero",
                           help="Base path for rollouts")
     args = argparser.parse_args()
     

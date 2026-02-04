@@ -50,7 +50,7 @@ python run_libero_ablation.py \
     --pretrained_checkpoint ${MODEL_PATH} \
     --model_family openvla \
     --task_suite_name libero_goal \
-    --ablation_task_id 8 \
+    --ablation_task_id 7 \
     --unnorm_key libero_goal_noops \
     --num_images_in_input 2 \
     --use_proprio True \
