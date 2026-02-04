@@ -345,6 +345,7 @@ def run_episode(
     # Setup
     t = 0
     replay_images = []
+    replay_states = []  # Store end-effector positions
     max_steps = TASK_MAX_STEPS[cfg.task_suite_name]
 
     # Run episode
@@ -360,6 +361,8 @@ def run_episode(
             # Prepare observation
             observation, img = prepare_observation(obs, resize_size)
             replay_images.append(img)
+            # Store end-effector position (x, y, z)
+            replay_states.append(obs["robot0_eef_pos"])
 
             # If action queue is empty, requery model
             if len(action_queue) == 0:
@@ -396,7 +399,7 @@ def run_episode(
     except Exception as e:
         log_message(f"Episode error: {e}", log_file)
 
-    return success, replay_images
+    return success, replay_images, replay_states
 
 def run_task(
     cfg: GenerateConfig,
@@ -465,7 +468,7 @@ def run_task(
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
         # Run episode
-        success, replay_images = run_episode(
+        success, replay_images, replay_states = run_episode(
             cfg,
             env,
             task_description,
@@ -488,7 +491,7 @@ def run_task(
 
         # Save replay video
         save_rollout_video(
-            {'image': replay_images},
+            {'image': replay_images, 'states': replay_states},
             total_episodes, 
             success=success, 
             task_description=task_description, 
