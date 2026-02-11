@@ -29,7 +29,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 import wandb
 
-from experiments.robot.openvla_utils import (
+from experiments.openvla_utils import (
     check_model_logic_mismatch,
     model_is_on_hf_hub,
     update_auto_map,
@@ -880,6 +880,9 @@ def finetune(cfg: FinetuneConfig) -> None:
             "Please check if the model supports this method."
         )
 
+    # Save llm_dim before any wrapping (access via config if attribute doesn't exist)
+    llm_dim = getattr(vla, 'llm_dim', vla.config.text_config.hidden_size)
+
     # LoRA setup
     if cfg.use_lora:
         lora_config = LoraConfig(
@@ -901,7 +904,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         # original one (due to the LoRA wrapper)
         vla.model.vision_backbone = FiLMedPrismaticVisionBackbone(
             vision_backbone=vla.model.vision_backbone,
-            llm_dim=vla.llm_dim,
+            llm_dim=llm_dim,
         )
         count_parameters(vla.vision_backbone, "vla.vision_backbone (post-wrap)")
         if cfg.resume:
@@ -919,7 +922,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             "proprio_projector",
             cfg,
             device_id,
-            {"llm_dim": vla.module.llm_dim, "proprio_dim": PROPRIO_DIM},
+            {"llm_dim": llm_dim, "proprio_dim": PROPRIO_DIM},
         )
 
     # If applicable, instantiate continuous action head for L1 regression
@@ -929,7 +932,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             "action_head",
             cfg,
             device_id,
-            {"input_dim": vla.module.llm_dim, "hidden_dim": vla.module.llm_dim, "action_dim": ACTION_DIM},
+            {"input_dim": llm_dim, "hidden_dim": llm_dim, "action_dim": ACTION_DIM},
             to_bf16=True,
         )
     # {"input_dim": vla.module.llm_dim, "hidden_dim": vla.module.llm_dim, "action_dim": ACTION_DIM},
@@ -942,19 +945,25 @@ def finetune(cfg: FinetuneConfig) -> None:
             cfg,
             device_id,
             {
-                "input_dim": vla.module.llm_dim,
-                "hidden_dim": vla.module.llm_dim,
+                "input_dim": llm_dim,
+                "hidden_dim": llm_dim,
                 "action_dim": ACTION_DIM,
                 "num_diffusion_steps": cfg.num_diffusion_steps,
             },
             to_bf16=True,
         )
         noisy_action_projector = init_module(
-            NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.module.llm_dim}
+            NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": llm_dim}
         )
 
     # Get number of vision patches
-    NUM_PATCHES = vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
+    vision_backbone = vla.module.vision_backbone
+    if hasattr(vision_backbone, 'get_num_patches'):
+        NUM_PATCHES = vision_backbone.get_num_patches() * vision_backbone.get_num_images_in_input()
+    else:
+        num_patches = vision_backbone.featurizer.patch_embed.num_patches
+        num_images = getattr(vision_backbone, 'num_images_in_input', 1)
+        NUM_PATCHES = num_patches * num_images
     # If we have proprio inputs, a single proprio embedding is appended to the end of the vision patch embeddings
     if cfg.use_proprio:
         NUM_PATCHES += 1

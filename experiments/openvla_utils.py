@@ -180,10 +180,13 @@ def check_model_logic_mismatch(pretrained_checkpoint: str) -> None:
     if not os.path.isdir(pretrained_checkpoint):
         return
 
-    # Find current files
+    # Find current files - use absolute path based on this file's location
+    # to avoid issues when CWD differs (e.g., SLURM jobs running from vla-scripts/)
     curr_files = {"modeling_prismatic.py": None, "configuration_prismatic.py": None}
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    prismatic_dir = os.path.join(project_root, "prismatic")
 
-    for root, _, files in os.walk("./prismatic/"):
+    for root, _, files in os.walk(prismatic_dir):
         for filename in curr_files.keys():
             if filename in files and curr_files[filename] is None:
                 curr_files[filename] = os.path.join(root, filename)

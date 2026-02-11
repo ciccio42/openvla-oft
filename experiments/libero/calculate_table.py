@@ -18,70 +18,77 @@ def get_variation_mapping():
     
     # Task 1: Open the middle layer of the drawer
     orig_1 = "Open the middle layer of the drawer"
-    mapping["open the middle layer of the drawer"] = orig_1  # DEFAULT
+    mapping["Open the middle layer of the drawer"] = orig_1  # DEFAULT
+    mapping["Open the middle layer of the cabinet"] = orig_1  # DEFAULT VARIANT
     mapping["Pull the middle layer of the drawer"] = orig_1  # L1
     mapping["The middle layer of the drawer needs to be opened"] = orig_1  # L2
     mapping["Open the layer of the drawer located between the top and bottom"] = orig_1  # L3
     
     # Task 2: Put the bowl on the stove
     orig_2 = "Put the bowl on the stove"
-    mapping["put the bowl on the stove"] = orig_2  # DEFAULT
+    mapping["Put the bowl on the stove"] = orig_2  # DEFAULT
     mapping["Set the bowl on the stove"] = orig_2  # L1
     mapping["The stove needs to have the bowl on it"] = orig_2  # L2
     mapping["Put the object between the wine bottle and the cream cheese on the stove"] = orig_2  # L3
     
     # Task 3: Put the wine bottle on the top of the drawer
     orig_3 = "Put the wine bottle on the top of the drawer"
-    mapping["put the wine bottle on top of the drawer"] = orig_3  # DEFAULT
+    mapping["Put the wine bottle on top of the drawer"] = orig_3  # DEFAULT
+    mapping["Put the wine bottle on the top of the cabinet"] = orig_3  # DEFAULT VARIANT
     mapping["Place the wine bottle on the top of the drawer"] = orig_3  # L1
     mapping["Top of the drawer needs to have the wine bottle on it"] = orig_3  # L2
     mapping["Put the object behind the bowl on the top of the drawer"] = orig_3  # L3
     
     # Task 4: Open the top layer of the drawer and put the bowl inside
     orig_4 = "Open the top layer of the drawer and put the bowl inside"
-    mapping["open the top drawer and put the bowl inside"] = orig_4  # DEFAULT
+    mapping["Open the top drawer and put the bowl inside"] = orig_4  # DEFAULT
+    mapping["Open the top layer of the drawer and put the bowl inside"] = orig_4  # DEFAULT VARIANT
     mapping["Pull the top layer of the drawer and place the bowl inside"] = orig_4  # L1
+    mapping["Pull the top layer of the drawer and put the bowl inside"] = orig_4  # L1 (variant)
     mapping["Store the bowl inside the top layer of the drawer"] = orig_4  # L2
     mapping["Open the top layer of the drawer and put the object between the plate and the cream cheese inside"] = orig_4  # L3
     
     # Task 5: Put the bowl on the top of the drawer
     orig_5 = "Put the bowl on the top of the drawer"
-    mapping["put the bowl on top of the drawer"] = orig_5  # DEFAULT
+    mapping["Put the bowl on top of the drawer"] = orig_5  # DEFAULT
+    mapping["Put the bowl on the top of the cabinet"] = orig_5  # DEFAULT VARIANT
     mapping["Place the bowl on the top of the drawer"] = orig_5  # L1
     mapping["The top of the drawer needs to have the bowl on it"] = orig_5  # L2
     mapping["Put the object between the wine bottle and the cream cheese on the top of the drawer"] = orig_5  # L3
     
     # Task 6: Push the plate to the front of the stove
     orig_6 = "Push the plate to the front of the stove"
-    mapping["push the plate to the front of the stove"] = orig_6  # DEFAULT
+    mapping["Push the plate to the front of the stove"] = orig_6  # DEFAULT
     mapping["Move the plate to the front of the stove"] = orig_6  # L1
     mapping["The space in front of the stove needs to have the plate in it"] = orig_6  # L2
     mapping["Push the object in front of the drawer to the front of the stove"] = orig_6  # L3
     
     # Task 7: Put the cream cheese in the bowl
     orig_7 = "Put the cream cheese in the bowl"
-    mapping["put the cream cheese in the bowl"] = orig_7  # DEFAULT
+    mapping["Put the cream cheese in the bowl"] = orig_7  # DEFAULT
+    mapping["Put the cream cheese on the bowl"] = orig_7  # DEFAULT VARIANT
     mapping["Place the cream cheese on the bowl"] = orig_7  # L1
+    mapping["Place the cream cheese in the bowl"] = orig_7  # L1 (variant)
     mapping["The bowl needs to be filled with the cream cheese"] = orig_7  # L2
     mapping["Put the object in front of the stove on the bowl"] = orig_7  # L3
     
     # Task 8: Turn on the stove
     orig_8 = "Turn on the stove"
-    mapping["turn on the stove"] = orig_8  # DEFAULT
+    mapping["Turn on the stove"] = orig_8  # DEFAULT
     mapping["Switch on the stove"] = orig_8  # L1
     mapping["The stove needs to be turned on"] = orig_8  # L2
     mapping["Turn on the object behind the cream cheese"] = orig_8  # L3
     
     # Task 9: Put the bowl on the plate
     orig_9 = "Put the bowl on the plate"
-    mapping["put the bowl on the plate"] = orig_9  # DEFAULT
+    mapping["Put the bowl on the plate"] = orig_9  # DEFAULT
     mapping["Place the bowl on the plate"] = orig_9  # L1
     mapping["The plate needs to have the bowl on it"] = orig_9  # L2
     mapping["Put the object between the wine bottle and the cream cheese on the plate"] = orig_9  # L3
     
     # Task 10: Put the wine bottle on the rack
     orig_10 = "Put the wine bottle on the rack"
-    mapping["put the wine bottle on the rack"] = orig_10  # DEFAULT
+    mapping["Put the wine bottle on the rack"] = orig_10  # DEFAULT
     mapping["Place the wine bottle on the rack"] = orig_10  # L1
     mapping["The rack needs to be filled with the wine bottle in it"] = orig_10  # L2
     mapping["Put the object behind the bowl on the rack"] = orig_10  # L3
@@ -100,7 +107,7 @@ def parse_txt_file(filepath):
     """
     rates = {}
     episodes = {}
-    task_order = []  # NUOVO: mantiene l'ordine
+    task_order = []
     
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -139,7 +146,7 @@ def parse_txt_file(filepath):
                     try:
                         rates[task] = float(rate_str)
                         episodes[task] = int(ep_str)
-                        task_order.append(task)  # NUOVO: salva l'ordine
+                        task_order.append(task)
                     except ValueError:
                         pass
     
@@ -185,7 +192,6 @@ def write_excel_comparison(output_xlsx, txt_files):
             print(f"  ✓ '{task}' → '{orig}'")
         else:
             print(f"  ⚠ Non mappata: '{task}'")
-            # Aggiungi comunque per evitare di perdere dati
             orig_tasks_ordered.append(f"UNKNOWN: {task}")
             variation_tasks_ordered.append(task)
     
@@ -258,7 +264,7 @@ def write_excel_comparison(output_xlsx, txt_files):
                 std_rate = math.sqrt(sum((r - mean_rate) ** 2 for r in valid_rates) / (len(valid_rates) - 1))
             else:
                 std_rate = 0.0
-            mean_std_display = f"{mean_rate:.1f} ± {std_rate:.1f}%"
+            mean_std_display = f"{mean_rate:.1f}% ± {std_rate:.1f}%"
         else:
             mean_rate = float('nan')
             std_rate = float('nan')
@@ -267,7 +273,6 @@ def write_excel_comparison(output_xlsx, txt_files):
         total_success = sum(seed_success_counts)
         total_episodes = sum(seed_episode_counts)
         
-        # Mostra la variazione (trunca se troppo lunga)
         var_display = variation if len(variation) <= 50 else variation[:47] + "..."
         
         # Aggiungi riga
@@ -302,19 +307,24 @@ def write_excel_comparison(output_xlsx, txt_files):
             total_success = sum(c[0] for c in all_seed_completions[seed_idx])
             total_episodes = sum(c[1] for c in all_seed_completions[seed_idx])
             
-            final_row.append(f"{mean:.2f} ± {std:.2f}")
+            final_row.append(f"{mean:.2f}% ± {std:.2f}%")
             final_row.append(f"{total_success}/{total_episodes}")
         else:
             final_row.append("N/A")
             final_row.append("0/0")
     
-    # Media globale
-    all_rates_combined = [r for seed_rates in all_seed_rates for r in seed_rates]
-    if all_rates_combined:
-        global_mean = sum(all_rates_combined) / len(all_rates_combined)
-        if len(all_rates_combined) > 1:
+    # Media globale (standard VLA: std tra le medie dei seed)
+    seed_means = []
+    for seed_idx in range(3):
+        if all_seed_rates[seed_idx]:
+            seed_mean = sum(all_seed_rates[seed_idx]) / len(all_seed_rates[seed_idx])
+            seed_means.append(seed_mean)
+    
+    if seed_means:
+        global_mean = sum(seed_means) / len(seed_means)
+        if len(seed_means) > 1:
             global_std = math.sqrt(
-                sum((r - global_mean) ** 2 for r in all_rates_combined) / (len(all_rates_combined) - 1)
+                sum((m - global_mean) ** 2 for m in seed_means) / (len(seed_means) - 1)
             )
         else:
             global_std = 0.0
@@ -322,7 +332,7 @@ def write_excel_comparison(output_xlsx, txt_files):
         global_success = sum(sum(c[0] for c in all_seed_completions[i]) for i in range(3))
         global_episodes = sum(sum(c[1] for c in all_seed_completions[i]) for i in range(3))
         
-        final_row.append(f"{global_mean:.2f} ± {global_std:.2f}")
+        final_row.append(f"{global_mean:.2f}% ± {global_std:.2f}%")
         final_row.append(f"{global_success}/{global_episodes}")
     else:
         final_row.append("N/A")

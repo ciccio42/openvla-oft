@@ -171,7 +171,7 @@ if __name__ == "__main__":
     argparser.add_argument('--dataset_config', type=str, default=None, 
                           help="Path to dataset_stats.pkl for denormalization (optional)")
     argparser.add_argument('--base_path', type=str, 
-                          default="/home/A.CARDAMONE7/outputs/rollouts/libero",
+                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/openvla-oft/openvla-oft_20000/",
                           help="Base path for rollouts")
     args = argparser.parse_args()
     

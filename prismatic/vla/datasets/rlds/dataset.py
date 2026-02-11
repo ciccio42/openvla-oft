@@ -203,7 +203,16 @@ def make_dataset_from_rlds(
         return traj
 
     # builder = tfds.builder(name, data_dir=data_dir)
-    builder = tfds.builder_from_directory(os.path.join(data_dir, name))
+    dataset_dir = os.path.join(data_dir, name)
+    # If dataset_info.json is inside a version subdirectory (e.g., "1.0.0"), use that path instead
+    if not os.path.exists(os.path.join(dataset_dir, "dataset_info.json")):
+        version_dirs = [d for d in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, d))]
+        for vdir in version_dirs:
+            candidate = os.path.join(dataset_dir, vdir)
+            if os.path.exists(os.path.join(candidate, "dataset_info.json")):
+                dataset_dir = candidate
+                break
+    builder = tfds.builder_from_directory(dataset_dir)
 
     # load or compute dataset statistics
     if isinstance(dataset_statistics, str):

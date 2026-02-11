@@ -3,6 +3,7 @@ analyze_embedding_overlap_rollout.py
 
 Analyze command variations using rollout-based embeddings:
 - Cosine Similarity (semantic - mean embeddings from rollouts)
+- Euclidean Distance (semantic - L2 norm)
 - Levenshtein Distance (lexical)
 
 Supports:
@@ -14,7 +15,7 @@ import os
 import glob
 import pickle
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 import pandas as pd
 from Levenshtein import distance as levenshtein_distance
 
@@ -72,7 +73,7 @@ def load_embeddings(embedding_files=None, embedding_dir=None):
 
 def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
     """
-    Analyze rollout-based mean embeddings with Cosine similarity and Levenshtein distance.
+    Analyze rollout-based mean embeddings with Cosine similarity, Euclidean distance, and Levenshtein distance.
     
     Args:
         embeddings: Dictionary of embeddings (already loaded)
@@ -109,7 +110,7 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
     results = []
     
     print("="*80)
-    print("DISTANCE ANALYSIS: Semantic (Cosine) + Lexical (Levenshtein)")
+    print("DISTANCE ANALYSIS: Semantic (Cosine + Euclidean) + Lexical (Levenshtein)")
     print("Using ROLLOUT MEAN EMBEDDINGS for semantic similarity")
     print("="*80)
     
@@ -148,7 +149,10 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
             # 1. SEMANTIC: Cosine Similarity on mean rollout embeddings
             cos_sim = cosine_similarity([default_emb], [var_emb])[0, 0]
             
-            # 2. LEXICAL: Normalized Levenshtein Distance
+            # 2. SEMANTIC: Euclidean Distance (L2) on mean rollout embeddings
+            euc_dist = euclidean_distances([default_emb], [var_emb])[0, 0]
+            
+            # 3. LEXICAL: Normalized Levenshtein Distance
             lev_dist = compute_levenshtein_normalized(default_cmd, var_cmd)
             
             # Store results
@@ -162,12 +166,14 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
                 'default_success_rate': default_sr,
                 'variation_success_rate': var_sr,
                 'cosine_similarity': cos_sim,
+                'euclidean_distance': euc_dist,
                 'levenshtein_distance': lev_dist,
             })
             
             sr_str = f", SR={var_sr:.0%}" if var_sr is not None else ""
             print(f"  {level.upper():3s}:     {var_cmd} [{var_rollouts} rollouts{sr_str}]")
             print(f"           Semantic:   Cosine_sim={cos_sim:.4f}")
+            print(f"           Semantic:   Euclidean_dist(L2)={euc_dist:.4f}")
             print(f"           Lexical:    Lev_dist={lev_dist:.4f}")
     
     df = pd.DataFrame(results)
@@ -184,6 +190,7 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
         
         print(f"\n{level.upper()}:")
         print(f"  Cosine Similarity (semantic):     {level_data['cosine_similarity'].mean():.4f} ± {level_data['cosine_similarity'].std():.4f}")
+        print(f"  Euclidean Distance L2 (semantic): {level_data['euclidean_distance'].mean():.4f} ± {level_data['euclidean_distance'].std():.4f}")
         print(f"  Levenshtein Distance (lexical):   {level_data['levenshtein_distance'].mean():.4f} ± {level_data['levenshtein_distance'].std():.4f}")
     
     # ===== OVERALL STATISTICS =====
@@ -191,6 +198,7 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
     print("OVERALL STATISTICS")
     print("="*80)
     print(f"  Overall Cosine Similarity:      {df['cosine_similarity'].mean():.4f} ± {df['cosine_similarity'].std():.4f}")
+    print(f"  Overall Euclidean Distance L2:  {df['euclidean_distance'].mean():.4f} ± {df['euclidean_distance'].std():.4f}")
     print(f"  Overall Levenshtein Distance:   {df['levenshtein_distance'].mean():.4f} ± {df['levenshtein_distance'].std():.4f}")
     
     # ===== SAVE RESULTS =====
@@ -202,7 +210,7 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
 
 def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
     """
-    Analyze cosine similarity across rollouts.
+    Analyze cosine similarity and euclidean distance across rollouts.
     
     Args:
         embeddings: Dictionary of embeddings (already loaded)
@@ -238,6 +246,14 @@ def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
     
     similarities = np.array(similarities)
     
+    # Compute per-rollout Euclidean distances (L2)
+    euc_dists = []
+    for i in range(min_rollouts):
+        dist = euclidean_distances([default_rollouts[i]], [var_rollouts[i]])[0, 0]
+        euc_dists.append(dist)
+    
+    euc_dists = np.array(euc_dists)
+    
     print(f"\nTask {task_id} - Default vs {level.upper()}")
     print(f"  Default command: {default_data['command_text']}")
     print(f"  Variation command: {var_data['command_text']}")
@@ -246,8 +262,13 @@ def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
     print(f"    Std:    {similarities.std():.4f}")
     print(f"    Min:    {similarities.min():.4f}")
     print(f"    Max:    {similarities.max():.4f}")
+    print(f"\n  Per-rollout euclidean distance L2 ({min_rollouts} rollouts):")
+    print(f"    Mean:   {euc_dists.mean():.4f}")
+    print(f"    Std:    {euc_dists.std():.4f}")
+    print(f"    Min:    {euc_dists.min():.4f}")
+    print(f"    Max:    {euc_dists.max():.4f}")
     
-    return similarities
+    return similarities, euc_dists
 
 
 if __name__ == "__main__":
@@ -257,17 +278,17 @@ if __name__ == "__main__":
         description="Analyze command variations with rollout-based embeddings",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-                Examples:
-                # Single file
-                python analyze_embedding_overlap_rollout.py --embedding_file embeddings.pkl
-            
-                # Multiple files (one per command level)
-                python analyze_embedding_overlap_rollout.py --embedding_files \
-                    /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_default_first_step_r10.pkl \
-                    /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_l1_first_step_r10.pkl \
-                    /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_l2_first_step_r10.pkl \
-                    /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_l3_first_step_r10.pkl
-                """
+Examples:
+  # Single file
+  python analyze_embedding_overlap_rollout.py --embedding_file embeddings.pkl
+
+  # Multiple files (one per command level)
+  python analyze_embedding_overlap_rollout.py --embedding_files \
+      /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_default_first_step_r10.pkl \
+      /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_l1_first_step_r10.pkl \
+      /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_l2_first_step_r10.pkl \
+      /home/A.CARDAMONE7/outputs/embeddings/rollout_embeddings_libero_goal_l3_first_step_r10.pkl
+        """
     )
     parser.add_argument(
         "--embedding_file",
@@ -339,7 +360,7 @@ if __name__ == "__main__":
     df = analyze_embeddings(embeddings, output_csv=args.output_csv or f"{output_base}.csv")
     
     if args.per_rollout_analysis:
-        similarities = compare_per_rollout_similarity(
+        similarities, euc_dists = compare_per_rollout_similarity(
             embeddings, 
             task_id=args.task_id, 
             level=args.level

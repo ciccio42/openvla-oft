@@ -1,13 +1,11 @@
 #!/bin/bash
 
-#SBATCH --exclude=tnode[01-17]
-#SBATCH -A hpc_default
+#SBATCH --account=did_robot_learning_359
 #SBATCH --partition=gpuq
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=32
-#SBATCH --exclude=gnode14
 #SBATCH --export=ALL
 
 BASE_CHECKPOINT=$1

@@ -149,7 +149,7 @@ def get_libero_wrist_image(obs):
     return img
 
 
-def save_rollout_video(rollout_traj, idx, success, task_description, log_file=None, dataset_name="libero", run=0, change_command=False, command_level=None, custom_video_dir=None):
+def save_rollout_video(rollout_traj, idx, success, task_description, log_file=None, dataset_name="libero_goal", run=0, change_command=False, command_level=None, custom_video_dir=None):
     """Saves an MP4 replay of an episode."""
     
     # Use custom directory if provided, otherwise use default logic
@@ -158,9 +158,9 @@ def save_rollout_video(rollout_traj, idx, success, task_description, log_file=No
     else:
         # Original default behavior
         if change_command and command_level:
-            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/command_{command_level}/run_{run}"
+            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/openvla-oft_50000/command_{command_level}/run_{run}"
         else:
-            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/default/run_{run}"
+            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/openvla-oft_50000/default/run_{run}"
     
     os.makedirs(rollout_dir, exist_ok=True)
     
