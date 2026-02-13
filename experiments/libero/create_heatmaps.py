@@ -10,6 +10,37 @@ import pickle as pkl
 
 TABLE_SIZE = (1.0, 1.0)  # height (y), width (x)
 
+def compute_heatmap_data(task_distribution):
+    """Compute heatmap data from trajectories (without plotting)."""
+    px_resolution = 0.5  # in cm
+    table_size_cm = np.array(TABLE_SIZE) * 100
+    table_size_px = (table_size_cm / px_resolution).astype(np.int32)
+    table_map = np.zeros((table_size_px[0], table_size_px[1]))
+
+    for episode_idx, trajectory in enumerate(task_distribution):
+        trajectory = np.array(trajectory)[:, :2]
+        px_traj = (trajectory * 100 / px_resolution).astype(np.int32)
+        px_traj[:, 0] = table_map.shape[0] // 2 + px_traj[:, 0]
+        px_traj[:, 1] = table_map.shape[1] // 2 + px_traj[:, 1]
+        px_traj = px_traj[
+            (px_traj[:, 0] >= 0) & (px_traj[:, 0] < table_map.shape[0]) &
+            (px_traj[:, 1] >= 0) & (px_traj[:, 1] < table_map.shape[1])
+        ]
+        for x, y in px_traj:
+            table_map[x, y] += 1
+
+    # Crop to focus area
+    y_min, y_max = -45, 20
+    x_min, x_max = -35, 35
+    y_min_px = int((y_min + table_size_cm[0] / 2) / px_resolution)
+    y_max_px = int((y_max + table_size_cm[0] / 2) / px_resolution)
+    x_min_px = int((x_min + table_size_cm[1] / 2) / px_resolution)
+    x_max_px = int((x_max + table_size_cm[1] / 2) / px_resolution)
+    cropped_map = table_map[y_min_px:y_max_px, x_min_px:x_max_px]
+    
+    return cropped_map
+
+
 def heat_map(task_distribution, task_path, task_name, model_name, command_level="DEFAULT"):
     # Each px represents 0.5x0.5 cm (0.005m x 0.005m)
     px_resolution = 0.5  # in cm
@@ -91,6 +122,84 @@ def heat_map(task_distribution, task_path, task_name, model_name, command_level=
     plt.close()
 
     print(f"Saved heatmap to {save_path}")
+    return cropped_map
+
+
+def create_combined_heatmap(heatmaps_data, task_path, model_name, command_level):
+    """
+    Create a combined horizontal image with all heatmaps side by side.
+    
+    Args:
+        heatmaps_data: dict of {task_name: cropped_map}
+        task_path: path to save the combined image
+        model_name: model name for the title (e.g., "OpenVLA-OFT")
+        command_level: command level (e.g., "L1", "L2")
+    """
+    if not heatmaps_data:
+        print("WARNING: No heatmaps to combine")
+        return
+    
+    n_tasks = len(heatmaps_data)
+    task_names = list(heatmaps_data.keys())
+    
+    # Calculate global vmax for consistent color scaling
+    global_vmax = max(np.max(hm) for hm in heatmaps_data.values() if np.max(hm) > 0)
+    global_vmax = max(global_vmax, 1)
+    
+    # Create figure with subplots
+    fig_width = 5 * n_tasks + 1  # 5 inches per task + colorbar space
+    fig, axes = plt.subplots(1, n_tasks, figsize=(fig_width, 8))
+    
+    if n_tasks == 1:
+        axes = [axes]
+    
+
+    norm = mcolors.LogNorm(vmin=1, vmax=global_vmax)
+    
+    # Crop range for axis labels
+    y_min, y_max = -45, 20
+    x_min, x_max = -35, 35
+    px_resolution = 0.5
+    
+    for idx, (ax, task_name) in enumerate(zip(axes, task_names)):
+        cropped_map = heatmaps_data[task_name]
+        task_title = task_name.replace("_", " ").title()
+        
+        im = ax.imshow(cropped_map, cmap='plasma', origin='upper', norm=norm)
+        ax.invert_xaxis()
+        
+        # Set title (task command)
+        ax.set_title(f'"{task_title}"', fontsize=9, wrap=True)
+        
+        # Axis ticks (every 10 cm)
+        ticks_x = np.arange(0, cropped_map.shape[1], int(10 / px_resolution))
+        ticks_y = np.arange(0, cropped_map.shape[0], int(10 / px_resolution))
+        tick_labels_x = np.arange(x_min, x_max, 10)
+        tick_labels_y = np.arange(y_min, y_max, 10)
+        
+        ax.set_xticks(ticks_x)
+        ax.set_xticklabels(tick_labels_x, fontsize=7)
+        ax.set_yticks(ticks_y)
+        ax.set_yticklabels(tick_labels_y, fontsize=7)
+        
+        if idx == 0:
+            ax.set_ylabel("X Axis (cm)", fontsize=9)
+        ax.set_xlabel("Y Axis (cm)", fontsize=9)
+    
+    # Add colorbar on the right
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.015, 0.65])
+    cbar = fig.colorbar(im, cax=cbar_ax)
+    cbar.set_label("Trajectory Density (log scale)", fontsize=10)
+    
+    plt.subplots_adjust(left=0.05, right=0.9, top=0.92, bottom=0.08, wspace=0.15)
+    
+    # Save combined image
+    os.makedirs(task_path, exist_ok=True)
+    save_path = os.path.join(task_path, f"combined_heatmaps_task_comp_l1.png")
+    plt.savefig(save_path, bbox_inches='tight', dpi=150)
+    plt.close()
+    
+    print(f"Saved combined heatmap to {save_path}")
 
 
 def process_rollout_folder(test_path, model_name, dataset_config=None):
@@ -158,9 +267,15 @@ def process_rollout_folder(test_path, model_name, dataset_config=None):
     
     # Create heatmaps for each task
     if tasks_trajectories:
+        heatmaps_data = {}
         for task_name, episodes in tasks_trajectories.items():
             print(f"Creating heatmap for task: {task_name} with {len(episodes)} episodes")
-            heat_map(episodes, test_path, task_name, model_name, command_level)
+            cropped_map = heat_map(episodes, test_path, task_name, model_name, command_level)
+            heatmaps_data[task_name] = cropped_map
+        
+        # Create combined heatmap
+        print(f"\nCreating combined heatmap...")
+        create_combined_heatmap(heatmaps_data, test_path, model_name, command_level)
     else:
         print(f"WARNING: No trajectories found in {test_path}")
 
@@ -171,7 +286,7 @@ if __name__ == "__main__":
     argparser.add_argument('--dataset_config', type=str, default=None, 
                           help="Path to dataset_stats.pkl for denormalization (optional)")
     argparser.add_argument('--base_path', type=str, 
-                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/openvla-oft/openvla-oft_20000/",
+                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/task_composition/openvla-oft/task_comp_l1",
                           help="Base path for rollouts")
     args = argparser.parse_args()
     
@@ -189,21 +304,29 @@ if __name__ == "__main__":
     else:
         print("No dataset config provided - assuming states are already denormalized")
     
-    # Define paths and their corresponding names
-    rollout_paths = [
-        (os.path.join(args.base_path, "default"), "OpenVLA-OFT (Default)"),
-        (os.path.join(args.base_path, "command_l1"), "OpenVLA-OFT (L1)"),
-        (os.path.join(args.base_path, "command_l2"), "OpenVLA-OFT (L2)"),
-        (os.path.join(args.base_path, "command_l3"), "OpenVLA-OFT (L3)"),
-        (os.path.join(args.base_path, "command_ablation"), "OpenVLA-OFT (Ablation)"),
-    ]
+    # Check if base_path contains run_* folders directly
+    run_folders_direct = glob.glob(os.path.join(args.base_path, "run_*"))
     
-    # Process each path
-    for path, model_name in rollout_paths:
-        if os.path.exists(path):
-            process_rollout_folder(path, model_name, dataset_config)
-        else:
-            print(f"WARNING: Path does not exist: {path}")
+    if run_folders_direct:
+        # Process base_path directly (legacy or simple structure)
+        model_name = "OpenVLA-OFT"
+        process_rollout_folder(args.base_path, model_name, dataset_config)
+    else:
+        # Define paths and their corresponding names (multi-config structure)
+        rollout_paths = [
+            (os.path.join(args.base_path, "default"), "OpenVLA-OFT (Default)"),
+            (os.path.join(args.base_path, "command_l1"), "OpenVLA-OFT (L1)"),
+            (os.path.join(args.base_path, "command_l2"), "OpenVLA-OFT (L2)"),
+            (os.path.join(args.base_path, "command_l3"), "OpenVLA-OFT (L3)"),
+            (os.path.join(args.base_path, "command_ablation"), "OpenVLA-OFT (Ablation)"),
+        ]
+        
+        # Process each path
+        for path, model_name in rollout_paths:
+            if os.path.exists(path):
+                process_rollout_folder(path, model_name, dataset_config)
+            else:
+                print(f"WARNING: Path does not exist: {path}")
     
     print("\n" + "="*80)
     print("HEATMAP GENERATION COMPLETE")
