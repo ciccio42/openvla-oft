@@ -65,25 +65,58 @@ def get_libero_env(task, change_command=False, command_level=None, ablation_bddl
     
     # PRIORITY 2: Handle L1/L2/L3 synonym variations (if ablation_bddl_file is None)
     elif change_command and command_level is not None:
-        # Replace .bddl with _syn_l{X}.bddl
+        # Replace .bddl with _syn_l{X}_vN.bddl
         base_name = task.bddl_file.replace('.bddl', '')
-        new_bddl_filename = f"{base_name}_syn_{command_level}.bddl"
-        new_task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, new_bddl_filename)
+        bddl_folder = os.path.join(get_libero_path("bddl_files"), task.problem_folder)
         
-        # Check if file exists
-        if not os.path.exists(new_task_bddl_file):
-            print(f"WARNING: Custom BDDL file not found: {new_task_bddl_file}")
-            print(f"Falling back to default BDDL file: {task_bddl_file}")
-        else:
-            print(f"Using custom BDDL: {new_task_bddl_file}")
+        # Pattern: {base_name}_syn_{command_level}_v*.bddl (case-insensitive)
+        pattern = f"{base_name}_syn_{command_level}_v"
+        
+        # Find all matching files
+        matching_files = []
+        try:
+            for filename in os.listdir(bddl_folder):
+                if pattern.lower() in filename.lower() and filename.endswith('.bddl'):
+                    matching_files.append(filename)
+        except Exception as e:
+            print(f"Warning: Could not list files in {bddl_folder}: {e}")
+        
+        if matching_files:
+            # Extract version numbers and sort to get the highest version
+            def extract_version(filename):
+                import re
+                match = re.search(r'_v(\d+)', filename, re.IGNORECASE)
+                return int(match.group(1)) if match else 0
+            
+            matching_files.sort(key=extract_version, reverse=True)
+            selected_file = matching_files[0]
+            new_task_bddl_file = os.path.join(bddl_folder, selected_file)
+            
+            print(f"✓ Found {len(matching_files)} matching file(s) for {command_level}")
+            print(f"✓ Using version file: {selected_file}")
             task_bddl_file = new_task_bddl_file
             
             # Extract variation command from custom BDDL
             variation_description = extract_command_from_bddl(task_bddl_file)
             if variation_description:
                 task_description = variation_description
+                print(f"✓ Command loaded: '{task_description}'")
             else:
-                print(f"Warning: Could not extract variation command from {new_task_bddl_file}")
+                print(f"Warning: Could not extract variation command from {selected_file}")
+        else:
+            # Fallback: try without version suffix
+            new_bddl_filename = f"{base_name}_syn_{command_level}.bddl"
+            new_task_bddl_file = os.path.join(bddl_folder, new_bddl_filename)
+            
+            if os.path.exists(new_task_bddl_file):
+                print(f"✓ Using custom BDDL (no version): {new_bddl_filename}")
+                task_bddl_file = new_task_bddl_file
+                variation_description = extract_command_from_bddl(task_bddl_file)
+                if variation_description:
+                    task_description = variation_description
+            else:
+                print(f"WARNING: No custom BDDL files found for {command_level}")
+                print(f"Falling back to default BDDL file: {task_bddl_file}")
     
     env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
     env = OffScreenRenderEnv(**env_args)
@@ -158,9 +191,9 @@ def save_rollout_video(rollout_traj, idx, success, task_description, log_file=No
     else:
         # Original default behavior
         if change_command and command_level:
-            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/openvla-oft_50000/command_{command_level}/run_{run}"
+            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/syntactic_variation/openvla-oft/openvla-oft_50000_l1_variations_test/command_{command_level}/run_{run}"
         else:
-            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/openvla-oft_50000/default/run_{run}"
+            rollout_dir = f"/mnt/beegfs/a.cardamone7/outputs/rollouts/{dataset_name}/syntactic_variation/openvla-oft/openvla-oft_50000_l1_variations_test/default/run_{run}"
     
     os.makedirs(rollout_dir, exist_ok=True)
     

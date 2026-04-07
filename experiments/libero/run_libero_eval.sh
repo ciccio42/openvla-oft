@@ -1,22 +1,22 @@
 #!/bin/bash
 
 #SBATCH --account=did_robot_learning_359
-#SBATCH --job-name=20000_openvla_libero_eval
+#SBATCH --job-name=task10_l2v_openvla_libero_eval
 #SBATCH --partition=gpuq
 #SBATCH --exclude=gnode13
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --array=0-2 # Esegue 3 job (seed 0, 1, 2)
-#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/openvla_20000_eval_libero_goal_seed_%a_%j.out
-#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/openvla_20000_eval_libero_goal_seed_%a_%j.err
+#SBATCH --array=1 # Esegue 3 job (seed 0, 1, 2)
+#SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/L2_Variations_Eval_openvla_libero_goal_task10_seed_%a_%j.out
+#SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/L2_Variations_Eval_openvla_libero_goal_task10_seed_%a_%j.err
 
 SEED=$SLURM_ARRAY_TASK_ID
-ID_NOTE="libero_goal_eval_seed_${SEED}_ckpt20000"
+ID_NOTE="L2_Variations_Eval_openvla_libero_goal_task10_seed_${SEED}"
 
 # Model configuration
-MODEL_PATH="/home/A.CARDAMONE7/checkpoints/checkpoints_saving_folder/checkpoints_saving_folder/openvla/openvla-7b+libero_goal_no_noops_20000_chkpt"
+MODEL_PATH="/mnt/beegfs/a.cardamone7/checkpoints/openvla-7b-oft-libero-goal-seed${SEED}"
 WORK_DIR="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/openvla-oft/experiments/libero"
 LIBERO_PATH="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/LIBERO"
 
@@ -49,7 +49,7 @@ python run_libero_eval.py \
     --pretrained_checkpoint ${MODEL_PATH} \
     --model_family openvla \
     --task_suite_name libero_goal \
-    --unnorm_key libero_goal_noops \
+    --unnorm_key libero_goal_no_noops \
     --num_images_in_input 2 \
     --use_proprio True \
     --use_l1_regression True \
@@ -58,8 +58,10 @@ python run_libero_eval.py \
     --num_trials_per_task 50 \
     --env_img_res 256 \
     --seed ${SEED} \
-    --change_command False \
-    --command_level default \
+    --change_command True \
+    --command_level l2 \
+    --task_id 9 \
+    --only_numbered_variants True \
     --run_id_note ${ID_NOTE} \
     --local_log_dir /mnt/beegfs/a.cardamone7/outputs/logs
 

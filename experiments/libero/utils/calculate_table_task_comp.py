@@ -1,7 +1,7 @@
 """
 calculate_table_task_comp.py
 
-Genera una tabella Excel con i risultati di Task Composition L1.
+Genera una tabella Excel con i risultati di Task Composition L1 o L2.
 
 Colonne:
   - # Task
@@ -14,6 +14,7 @@ Colonne:
 
 Uso:
   python calculate_table_task_comp.py --txt_dir <dir> output.xlsx
+  python calculate_table_task_comp.py --level l2 --txt_dir <dir> output.xlsx
   python calculate_table_task_comp.py --manual --seed0 f0.txt --seed1 f1.txt --seed2 f2.txt output.xlsx
 """
 
@@ -42,11 +43,35 @@ def get_task_comp_l1_order():
     ]
 
 
-def get_reference_mapping():
+def get_task_comp_l2_order():
+    """Ordine fisso dei 5 task composition L2."""
+    return [
+        "Open the middle layer of the drawer and put the bowl inside",
+        "Put the bowl on the stove and turn on the stove",
+        "Put the cream cheese on the bowl and put the bowl on the plate",
+        "Push the plate to the front of the stove and put the bowl on the plate",
+        "Put the cream cheese on the bowl and put the bowl on the top of the cabinet",
+    ]
+
+
+def get_reference_mapping(level="l1"):
     """
-    Mapping: task composition L1 → task di riferimento dal training.
+    Mapping: task composition → task di riferimento dal training.
     Chiavi lowercase per matching case-insensitive.
     """
+    if level == "l2":
+        return {
+            "open the middle layer of the drawer and put the bowl inside":
+                "Open the middle drawer of the cabinet  /  Open the top drawer and put the bowl inside",
+            "put the bowl on the stove and turn on the stove":
+                "Put the bowl on the stove  /  Turn on the stove",
+            "put the cream cheese on the bowl and put the bowl on the plate":
+                "Put the cream cheese in the bowl  /  Put the bowl on the plate",
+            "push the plate to the front of the stove and put the bowl on the plate":
+                "Push the plate to the front of the stove  /  Put the bowl on the plate",
+            "put the cream cheese on the bowl and put the bowl on the top of the cabinet":
+                "Put the cream cheese in the bowl  /  Put the bowl on the top of the cabinet",
+        }
     return {
         "put the plate on the top of the cabinet":
             "Put the bowl on the top of the cabinet",
@@ -145,8 +170,8 @@ def merge_txt_files(txt_files_list):
 # EXCEL GENERATION
 # =========================
 
-def write_excel(output_xlsx, txt_files_by_seed):
-    """Genera l'Excel con i risultati task_comp_l1."""
+def write_excel(output_xlsx, txt_files_by_seed, level="l1"):
+    """Genera l'Excel con i risultati task_comp (L1 o L2)."""
 
     # Parse per ogni seed
     all_rates = []
@@ -161,12 +186,12 @@ def write_excel(output_xlsx, txt_files_by_seed):
         all_episodes.append(eps)
         print(f"    -> {len(rates)} task trovati")
 
-    ref_mapping = get_reference_mapping()
-    fixed_order = get_task_comp_l1_order()
+    ref_mapping = get_reference_mapping(level)
+    fixed_order = get_task_comp_l2_order() if level == "l2" else get_task_comp_l1_order()
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Task Comp L1"
+    ws.title = f"Task Comp {level.upper()}"
 
     # Header
     headers = [
@@ -278,8 +303,10 @@ def write_excel(output_xlsx, txt_files_by_seed):
 # AUTO-DETECT
 # =========================
 
-def find_txt_files_by_seed(base_dir, pattern_prefix="EVAL-task_comp_l1"):
+def find_txt_files_by_seed(base_dir, pattern_prefix=None, level="l1"):
     """Trova i file .txt per ogni seed nella directory."""
+    if pattern_prefix is None:
+        pattern_prefix = f"EVAL-task_comp_{level}"
     txt_files_by_seed = {0: [], 1: [], 2: []}
 
     print(f"\n[INFO] Cercando in: {base_dir}")
@@ -308,15 +335,17 @@ def find_txt_files_by_seed(base_dir, pattern_prefix="EVAL-task_comp_l1"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Genera tabella Excel Task Composition L1 da file log .txt"
+        description="Genera tabella Excel Task Composition L1/L2 da file log .txt"
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--txt_dir", help="Directory con i file .txt (auto-detect)")
     group.add_argument("--manual", action="store_true", help="Specifica file manualmente")
 
-    parser.add_argument("--pattern", default="EVAL-task_comp_l1",
-                        help="Prefix per auto-detect (default: EVAL-task_comp_l1)")
+    parser.add_argument("--level", default="l1", choices=["l1", "l2"],
+                        help="Livello di composizione: l1 (default) o l2")
+    parser.add_argument("--pattern", default=None,
+                        help="Prefix per auto-detect (default: EVAL-task_comp_<level>)")
     parser.add_argument("--seed0", nargs="+", help="File per seed 0 (modo manuale)")
     parser.add_argument("--seed1", nargs="+", help="File per seed 1 (modo manuale)")
     parser.add_argument("--seed2", nargs="+", help="File per seed 2 (modo manuale)")
@@ -325,7 +354,7 @@ def main():
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
-    print("  TASK COMPOSITION L1 - EXCEL TABLE GENERATOR")
+    print(f"  TASK COMPOSITION {args.level.upper()} - EXCEL TABLE GENERATOR")
     print("=" * 60)
 
     if args.manual:
@@ -334,12 +363,12 @@ def main():
             exit(1)
         txt_files_by_seed = {0: args.seed0, 1: args.seed1, 2: args.seed2}
     else:
-        txt_files_by_seed = find_txt_files_by_seed(args.txt_dir, args.pattern)
+        txt_files_by_seed = find_txt_files_by_seed(args.txt_dir, args.pattern, args.level)
         if txt_files_by_seed is None:
             print("[ERROR] File non trovati per tutti i seed!")
             exit(1)
 
-    write_excel(args.output_xlsx, txt_files_by_seed)
+    write_excel(args.output_xlsx, txt_files_by_seed, level=args.level)
 
     print("=" * 60)
     print("  COMPLETATO!")

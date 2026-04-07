@@ -37,7 +37,7 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent  # openvla-oft/
 sys.path.insert(0, str(project_root))
 
-from experiments.libero.libero_utils import (
+from experiments.libero.utils.libero_utils import (
     get_libero_dummy_action,
     get_libero_image,
     get_libero_wrist_image,
@@ -110,8 +110,46 @@ TASK_COMP_L1_TASKS = [
 ]
 
 
-# Define max steps (same as libero_goal)
-TASK_MAX_STEPS = 300
+# ============================================================================
+# Task Composition L2 - Custom Task Definitions
+# ============================================================================
+
+TASK_COMP_L2_TASKS = [
+    {
+        # L2: open MIDDLE drawer + put bowl inside (chain: open + pick-place)
+        "bddl_file": "open_the_middle_drawer_of_the_cabinet_task_comp_l2.bddl",
+        "init_states_from": "open_the_middle_drawer_of_the_cabinet",
+    },
+    {
+        # L2: put bowl on stove + turn on stove (chain: pick-place + manipulation)
+        "bddl_file": "put_the_bowl_on_the_stove_task_comp_l2.bddl",
+        "init_states_from": "put_the_bowl_on_the_stove",
+    },
+    {
+        # L2: put cream cheese in bowl + put bowl on plate (chain: 2 pick-place)
+        "bddl_file": "put_the_cream_cheese_in_the_bowl_task_comp_l2.bddl",
+        "init_states_from": "put_the_cream_cheese_in_the_bowl",
+    },
+    {
+        # L2: push plate to stove front + put bowl on plate (chain: push + pick-place)
+        "bddl_file": "push_the_plate_to_the_front_of_the_stove_task_comp_l2.bddl",
+        "init_states_from": "push_the_plate_to_the_front_of_the_stove",
+    },
+    {
+        # L2: put cream cheese in bowl + put bowl on top of cabinet (chain: 2 pick-place)
+        "bddl_file": "put_the_bowl_on_top_of_the_cabinet_task_comp_l2.bddl",
+        "init_states_from": "put_the_cream_cheese_in_the_bowl",
+    },
+]
+
+TASK_COMP_REGISTRY = {
+    "l1": TASK_COMP_L1_TASKS,
+    "l2": TASK_COMP_L2_TASKS,
+}
+
+
+# Define max steps
+TASK_MAX_STEPS = 500
 
 
 # Set up logging
@@ -179,6 +217,11 @@ class GenerateConfig:
 
     seed: int = 42
     debug: bool = False
+    comp_level: str = "l1"
+
+    # Task subset (for splitting across nodes)
+    task_start: int = 0
+    task_end: int = -1  # -1 means all tasks
     # fmt: on
 
 
@@ -248,7 +291,7 @@ def check_unnorm_key(cfg: GenerateConfig, model) -> None:
 
 def setup_logging(cfg: GenerateConfig):
     """Set up logging to file."""
-    run_id = f"EVAL-task_comp_l1-{cfg.model_family}-{DATE_TIME}"
+    run_id = f"EVAL-task_comp_{cfg.comp_level}-{cfg.model_family}-{DATE_TIME}"
     if cfg.run_id_note is not None:
         run_id += f"--{cfg.run_id_note}"
 
@@ -293,10 +336,10 @@ def process_action(action, model_family):
 # Custom Task Loading
 # ============================================================================
 
-def load_custom_tasks():
+def load_custom_tasks(comp_level: str = "l1"):
     """
-    Build Task NamedTuples and load init_states for each task_comp_l1 task.
-    
+    Build Task NamedTuples and load init_states for each task_comp task.
+
     Returns:
         list of dicts, each with keys:
             - 'task': Task NamedTuple
@@ -308,7 +351,7 @@ def load_custom_tasks():
     init_dir = os.path.join(get_libero_path("init_states"), "libero_goal")
 
     custom_tasks = []
-    for task_def in TASK_COMP_L1_TASKS:
+    for task_def in TASK_COMP_REGISTRY[comp_level]:
         bddl_filename = task_def["bddl_file"]
         init_from = task_def["init_states_from"]
 
@@ -470,7 +513,7 @@ def run_custom_task(
             log_file=log_file,
             dataset_name="task_comp_l1",
             run=cfg.run_id_note,
-            custom_video_dir=f"/mnt/beegfs/a.cardamone7/outputs/rollouts/libero_goal/task_composition/openvla-oft/task_comp_l1/run_{cfg.run_id_note}",
+            custom_video_dir=f"/mnt/beegfs/a.cardamone7/outputs/rollouts/libero_goal/task_composition/openvla-oft/task_comp_{cfg.comp_level}/run_{cfg.run_id_note}",
         )
 
         log_message(f"Success: {success}", log_file)
@@ -555,18 +598,25 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     resize_size = get_image_resize_size(cfg)
 
     # Load custom tasks
-    custom_tasks = load_custom_tasks()
+    all_custom_tasks = load_custom_tasks(cfg.comp_level)
+    total_num_tasks = len(all_custom_tasks)
+
+    # Select task subset
+    task_end = cfg.task_end if cfg.task_end >= 0 else total_num_tasks
+    task_start = cfg.task_start
+    custom_tasks = all_custom_tasks[task_start:task_end]
     num_tasks = len(custom_tasks)
 
-    log_message(f"Loaded {num_tasks} task composition L1 tasks", None)
+    log_message(f"Loaded {total_num_tasks} total task composition {cfg.comp_level.upper()} tasks", None)
+    log_message(f"Running task subset [{task_start}:{task_end}] ({num_tasks} tasks)", None)
     for i, ct in enumerate(custom_tasks):
-        log_message(f"  [{i}] {ct['task_description']} ({ct['task'].bddl_file})", None)
+        log_message(f"  [{task_start + i}] {ct['task_description']} ({ct['task'].bddl_file})", None)
 
     # Setup logging
     log_file, local_log_filepath, run_id = setup_logging(cfg)
 
     log_message("=" * 80, log_file)
-    log_message("TASK COMPOSITION L1 EVALUATION", log_file)
+    log_message(f"TASK COMPOSITION {cfg.comp_level.upper()} EVALUATION", log_file)
     log_message(f"Model: {cfg.pretrained_checkpoint}", log_file)
     log_message(f"Seed: {cfg.seed}", log_file)
     log_message(f"Num trials per task: {cfg.num_trials_per_task}", log_file)
@@ -577,7 +627,7 @@ def eval_task_comp(cfg: GenerateConfig) -> float:
     total_episodes, total_successes = 0, 0
     task_results = {}
 
-    for task_idx in tqdm.tqdm(range(num_tasks), desc="Task Comp L1"):
+    for task_idx in tqdm.tqdm(range(num_tasks), desc=f"Task Comp {cfg.comp_level.upper()}"):
         total_episodes, total_successes, task_name, task_sr, task_eps = run_custom_task(
             cfg, custom_tasks[task_idx], task_idx, num_tasks,
             model, resize_size, processor, action_head,

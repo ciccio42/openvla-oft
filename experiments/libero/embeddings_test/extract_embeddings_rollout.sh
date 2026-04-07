@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=6:59:00
-#SBATCH --array=0
+#SBATCH --array=2
 #SBATCH --output=/mnt/beegfs/a.cardamone7/outputs/logs/extract_emb_rollout_%A_%a.out
 #SBATCH --error=/mnt/beegfs/a.cardamone7/outputs/logs/extract_emb_rollout_%A_%a.err
 
@@ -17,7 +17,7 @@
 CHECKPOINT_PATH="/home/A.CARDAMONE7/checkpoints/openvla-7b-oft-libero-goal"
 WORK_DIR="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/openvla-oft/experiments/libero"
 LIBERO_PATH="/home/A.CARDAMONE7/repo/VLA-Bench/robosuite_test/LIBERO"
-OUTPUT_DIR="/mnt/beegfs/a.cardamone7/outputs/embeddings"
+OUTPUT_DIR="/mnt/beegfs/a.cardamone7/outputs/embeddings/openvla/l2_first_step_only"
 
 # Command levels array (index 0-3)
 COMMAND_LEVELS=("default" "l1" "l2" "l3")

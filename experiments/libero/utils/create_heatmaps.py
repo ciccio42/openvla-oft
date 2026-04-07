@@ -10,6 +10,48 @@ import pickle as pkl
 
 TABLE_SIZE = (1.0, 1.0)  # height (y), width (x)
 
+
+def infer_command_level_from_path(path):
+    """Infer command variation level from a rollout path."""
+    normalized_path = path.lower()
+    if "command_l1" in normalized_path:
+        return "L1"
+    if "command_l2" in normalized_path:
+        return "L2"
+    if "command_l3" in normalized_path:
+        return "L3"
+    if "ablation" in normalized_path:
+        return "ABLATION"
+    if "task_comp_l1" in normalized_path:
+        return "L1"
+    if "task_comp_l2" in normalized_path:
+        return "L2"
+    return "DEFAULT"
+
+
+def get_rollout_paths(base_path, model_prefix):
+    """Return rollout folders for direct or multi-config layouts."""
+    run_folders_direct = glob.glob(os.path.join(base_path, "run_*"))
+    if run_folders_direct:
+        return [(base_path, model_prefix)]
+
+    normalized_path = base_path.lower()
+    if "task_comp" in normalized_path or "task_composition" in normalized_path:
+        return [
+            (os.path.join(base_path, "default"), f"{model_prefix} (Default)"),
+            (os.path.join(base_path, "command_l1"), f"{model_prefix} (L1)"),
+            (os.path.join(base_path, "command_l2"), f"{model_prefix} (L2)"),
+            (os.path.join(base_path, "command_ablation"), f"{model_prefix} (Ablation)"),
+        ]
+
+    return [
+        (os.path.join(base_path, "default"), f"{model_prefix} (Default)"),
+        (os.path.join(base_path, "command_l1"), f"{model_prefix} (L1)"),
+        (os.path.join(base_path, "command_l2"), f"{model_prefix} (L2)"),
+        (os.path.join(base_path, "command_l3"), f"{model_prefix} (L3)"),
+        (os.path.join(base_path, "command_ablation"), f"{model_prefix} (Ablation)"),
+    ]
+
 def compute_heatmap_data(task_distribution):
     """Compute heatmap data from trajectories (without plotting)."""
     px_resolution = 0.5  # in cm
@@ -195,7 +237,7 @@ def create_combined_heatmap(heatmaps_data, task_path, model_name, command_level)
     
     # Save combined image
     os.makedirs(task_path, exist_ok=True)
-    save_path = os.path.join(task_path, f"combined_heatmaps_task_comp_l1.png")
+    save_path = os.path.join(task_path, f"combined_heatmaps_{command_level.lower()}.png")
     plt.savefig(save_path, bbox_inches='tight', dpi=150)
     plt.close()
     
@@ -209,17 +251,7 @@ def process_rollout_folder(test_path, model_name, dataset_config=None):
     print(f"Model: {model_name}")
     print(f"{'='*80}\n")
     
-    # Extract command level from path
-    if "command_l1" in test_path or "/command_l1" in test_path:
-        command_level = "L1"
-    elif "command_l2" in test_path or "/command_l2" in test_path:
-        command_level = "L2"
-    elif "command_l3" in test_path or "/command_l3" in test_path:
-        command_level = "L3"
-    elif "ablation" in test_path.lower():
-        command_level = "ABLATION"
-    else:
-        command_level = "DEFAULT"
+    command_level = infer_command_level_from_path(test_path)
     
     print(f"Command level: {command_level}\n")
     
@@ -286,7 +318,7 @@ if __name__ == "__main__":
     argparser.add_argument('--dataset_config', type=str, default=None, 
                           help="Path to dataset_stats.pkl for denormalization (optional)")
     argparser.add_argument('--base_path', type=str, 
-                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/task_composition/openvla-oft/task_comp_l1",
+                          default="/home/A.CARDAMONE7/outputs/rollouts/libero_goal/syntactic_variation/openvla-oft/openvla-oft_20000_test/command_l2",
                           help="Base path for rollouts")
     args = argparser.parse_args()
     
@@ -304,29 +336,11 @@ if __name__ == "__main__":
     else:
         print("No dataset config provided - assuming states are already denormalized")
     
-    # Check if base_path contains run_* folders directly
-    run_folders_direct = glob.glob(os.path.join(args.base_path, "run_*"))
-    
-    if run_folders_direct:
-        # Process base_path directly (legacy or simple structure)
-        model_name = "OpenVLA-OFT"
-        process_rollout_folder(args.base_path, model_name, dataset_config)
-    else:
-        # Define paths and their corresponding names (multi-config structure)
-        rollout_paths = [
-            (os.path.join(args.base_path, "default"), "OpenVLA-OFT (Default)"),
-            (os.path.join(args.base_path, "command_l1"), "OpenVLA-OFT (L1)"),
-            (os.path.join(args.base_path, "command_l2"), "OpenVLA-OFT (L2)"),
-            (os.path.join(args.base_path, "command_l3"), "OpenVLA-OFT (L3)"),
-            (os.path.join(args.base_path, "command_ablation"), "OpenVLA-OFT (Ablation)"),
-        ]
-        
-        # Process each path
-        for path, model_name in rollout_paths:
-            if os.path.exists(path):
-                process_rollout_folder(path, model_name, dataset_config)
-            else:
-                print(f"WARNING: Path does not exist: {path}")
+    for path, model_name in get_rollout_paths(args.base_path, "OpenVLA-OFT"):
+        if os.path.exists(path):
+            process_rollout_folder(path, model_name, dataset_config)
+        else:
+            print(f"WARNING: Path does not exist: {path}")
     
     print("\n" + "="*80)
     print("HEATMAP GENERATION COMPLETE")

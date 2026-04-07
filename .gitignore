@@ -164,3 +164,4 @@ experiments/robot/libero/*.png
 *txt
 
 experiments/robot/*
+experiments/libero/utils/*.xlsx

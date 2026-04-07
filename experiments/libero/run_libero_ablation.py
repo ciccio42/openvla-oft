@@ -28,7 +28,7 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from experiments.libero.libero_utils import (
+from experiments.libero.utils.libero_utils import (
     get_libero_dummy_action,
     get_libero_env,
     get_libero_image,

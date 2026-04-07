@@ -204,8 +204,109 @@ def analyze_embeddings(embeddings, output_csv="analysis_results.csv"):
     # ===== SAVE RESULTS =====
     df.to_csv(output_csv, index=False)
     print(f"\n✓ Results saved: {output_csv}")
-    
+
+    # ===== SAVE FORMATTED OVERLAP TABLES (one per level) =====
+    base_path = output_csv.rsplit(".", 1)[0]
+    for lvl in ['l1', 'l2', 'l3']:
+        level_df = df[df['level'] == lvl].reset_index(drop=True)
+        if len(level_df) == 0:
+            continue
+        formatted_path = f"{base_path}_overlap_{lvl}.xlsx"
+        _save_formatted_overlap_table(level_df, lvl, formatted_path)
+
     return df
+
+
+def _save_formatted_overlap_table(level_df, level, output_path):
+    """Save a human-readable overlap analysis table as Excel for a single variation level."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{level.upper()} Variations"
+
+    # ---- Title row ----
+    title = f"Overlapping Analysis - {level.upper()} Variations"
+    ws.merge_cells("A1:F1")
+    title_cell = ws["A1"]
+    title_cell.value = title
+    title_cell.font = Font(bold=True, size=13)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    # ---- Header row ----
+    headers = ["N°", "Original Task Command", "Variation Task Command",
+               "Cosine Similarity", "Euclidean Dist.", "Levenshtein Dist."]
+    header_fill = PatternFill(fill_type="solid", fgColor="2F5496")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style="thin", color="000000")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col, h in enumerate(headers, start=1):
+        cell = ws.cell(row=2, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[2].height = 20
+
+    # ---- Data rows ----
+    alt_fill = PatternFill(fill_type="solid", fgColor="DCE6F1")
+    num_fmt_4 = "0.0000"
+
+    for i, row in level_df.iterrows():
+        excel_row = i + 3
+        fill = alt_fill if i % 2 == 1 else None
+        values = [
+            i + 1,
+            row['default_command'],
+            row['variation_command'],
+            round(row['cosine_similarity'], 4),
+            round(row['euclidean_distance'], 4),
+            round(row['levenshtein_distance'], 4),
+        ]
+        for col, val in enumerate(values, start=1):
+            cell = ws.cell(row=excel_row, column=col, value=val)
+            cell.border = border
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            if fill:
+                cell.fill = fill
+            if col >= 4:
+                cell.number_format = num_fmt_4
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ---- Average row ----
+    avg_row = len(level_df) + 3
+    avg_fill = PatternFill(fill_type="solid", fgColor="F4B942")
+    avg_font = Font(bold=True)
+
+    def fmt_mean_std(col_name):
+        mean = level_df[col_name].mean()
+        std = level_df[col_name].std()
+        return f"{mean:.4f} ± {std:.4f}"
+
+    avg_values = [
+        "AVERAGE", "", "",
+        fmt_mean_std('cosine_similarity'),
+        fmt_mean_std('euclidean_distance'),
+        fmt_mean_std('levenshtein_distance'),
+    ]
+    for col, val in enumerate(avg_values, start=1):
+        cell = ws.cell(row=avg_row, column=col, value=val)
+        cell.font = avg_font
+        cell.fill = avg_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ---- Column widths ----
+    col_widths = [6, 52, 52, 18, 16, 18]
+    for col, width in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = width
+
+    wb.save(output_path)
+    print(f"✓ Formatted overlap table saved: {output_path}")
 
 
 def compare_per_rollout_similarity(embeddings, task_id=0, level='l1'):
@@ -352,7 +453,7 @@ Examples:
         output_base = os.path.join(output_base, "combined_analysis")
     else:
         # Default: try to load from default directory
-        default_dir = "/mnt/beegfs/a.cardamone7/outputs/embeddings"
+        default_dir = "/mnt/beegfs/a.cardamone7/outputs/embeddings/openvla/"
         embeddings = load_embeddings(embedding_dir=default_dir)
         output_base = os.path.join(default_dir, "combined_analysis")
     

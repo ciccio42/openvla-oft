@@ -15,6 +15,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
 
+import re
+
 import draccus
 import numpy as np
 import tqdm
@@ -27,7 +29,9 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent  # Va a openvla-oft/
 sys.path.insert(0, str(project_root))
 
-from experiments.libero.libero_utils import (
+from libero.libero import get_libero_path
+
+from experiments.libero.utils.libero_utils import (
     get_libero_dummy_action,
     get_libero_env,
     get_libero_image,
@@ -95,6 +99,8 @@ class GenerateConfig:
     #################################################################################################################
     change_command: bool = False                     # Use synonym command variations
     command_level: Optional[str] = None              # Command level: 'l1', 'l2', 'l3', 'all', or None
+    only_numbered_variants: bool = False              #if true, skip "base" and test only v1, v2, v3...
+    selected_version: Optional[Union[int, str]] = None  # e.g. 1,2,3 or "base"
     
     #################################################################################################################
     # Model-specific parameters
@@ -337,11 +343,6 @@ def run_episode(
     else:
         obs = env.get_observation()
 
-    # Initialize action queue
-    if cfg.num_open_loop_steps != NUM_ACTIONS_CHUNK:
-        print(f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match the NUM_ACTIONS_CHUNK "
-               "{NUM_ACTIONS_CHUNK} constant defined in prismatic.vla.constants! For best performance (in terms of "
-               "both speed and success rate), we recommend executing the full action chunk.")
     action_queue = deque(maxlen=cfg.num_open_loop_steps)
 
     # Setup
@@ -406,7 +407,7 @@ def run_episode(
 def run_task(
     cfg: GenerateConfig,
     task_suite,
-    task_id: int,
+    task_id,
     model,
     resize_size,
     processor=None,
@@ -418,124 +419,218 @@ def run_task(
     log_file=None,
 ):
     """Run evaluation for a single task."""
-    # Get task
     task = task_suite.get_task(task_id)
-
-    # Get initial states
     initial_states, all_initial_states = load_initial_states(cfg, task_suite, task_id, log_file)
 
-    # Initialize environment and get task description
-    env, task_description, original_description = get_libero_env(
-        task, 
-        change_command=cfg.change_command,
-        command_level=cfg.command_level,
-        resolution=cfg.env_img_res
-    )
-    
+    if cfg.selected_version is not None:
+        assert cfg.change_command and cfg.command_level is not None, (
+            f"selected_version={cfg.selected_version} richiede "
+            f"change_command=True e command_level non-None"
+        )
+
+    # Find base level file + all numbered versions if using command variation
+    available_variants = []
+    if cfg.change_command and cfg.command_level is not None:
+        base_name = os.path.splitext(os.path.basename(task.bddl_file))[0]
+
+        try:
+            bddl_folder = os.path.join(get_libero_path("bddl_files"), task.problem_folder)
+        except:
+            bddl_folder = os.path.dirname(task.bddl_file)
+
+        base_variant_filename = f"{base_name}_syn_{cfg.command_level}.bddl"
+
+        try:
+            for filename in os.listdir(bddl_folder):
+                if not filename.endswith(".bddl"):
+                    continue
+
+                # Include the base syn_l1 / syn_l2 / syn_l3 file
+                if filename.lower() == base_variant_filename.lower():
+                    available_variants.append(("base", filename))
+                    continue
+
+                # Include numbered variants syn_l1_v1 / syn_l2_v2 / ...
+                version_pattern = rf"^{re.escape(base_name)}_syn_{re.escape(cfg.command_level)}_v(\d+)\.bddl$"
+                match = re.match(version_pattern, filename, re.IGNORECASE)
+                if match:
+                    version_num = int(match.group(1))
+                    available_variants.append((version_num, filename))
+
+        except Exception as e:
+            log_message(f"Warning: Could not list variant files: {e}", log_file)
+
+        # Sort so that base comes first, then v1, v2, v3, ...
+        available_variants.sort(key=lambda x: (-1 if x[0] == "base" else x[0]))
+
+    # Determine which variants to test
+    if cfg.selected_version is not None:
+        versions_to_test = [cfg.selected_version]
+    elif available_variants:
+        if cfg.only_numbered_variants:
+            # Filtra il "base" e mantieni solo i varianti numerici (v1, v2, v3, ...)
+            versions_to_test = [v[0] for v in available_variants if v[0] != "base"]
+            if not versions_to_test:
+                log_message(
+                    "WARNING: only_numbered_variants=True ma nessuna variante numerica trovata. "
+                    "Fallback al 'base'.",
+                    log_file,
+                )
+                versions_to_test = [v[0] for v in available_variants]
+        else:
+            versions_to_test = [v[0] for v in available_variants]
+    else:
+        versions_to_test = [None]
+
     log_message("=" * 80, log_file)
     log_message(f"TASK {task_id + 1}/{task_suite.n_tasks}", log_file)
-    log_message(f"Original Command: {original_description}", log_file)
-    
-    if cfg.change_command and cfg.command_level:
-        log_message(f"Command Level: {cfg.command_level.upper()}", log_file)
-        log_message(f"Variation Command: {task_description}", log_file)
-        if task_description == original_description:
-            log_message(" WARNING: Variation same as original - check BDDL file", log_file)
-    else:
-        log_message(f"Command Level: DEFAULT", log_file)
-    
+    log_message(f"Versions to test: {versions_to_test}", log_file)
     log_message("=" * 80, log_file)
 
-    # Start episodes
-    task_episodes, task_successes = 0, 0
-    for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
+    task_results_per_version = {}
 
-        # Handle initial state
-        if cfg.initial_states_path == "DEFAULT":
-            # Use default initial state
-            initial_state = initial_states[episode_idx]
-        else:
-            # Get keys for fetching initial episode state from JSON
-            initial_states_task_key = task_description.replace(" ", "_")
-            episode_key = f"demo_{episode_idx}"
+    # Loop over versions
+    for version_to_test in versions_to_test:
+        
+        # Determine BDDL file for this variant
+        ablation_bddl_file = None
+        if available_variants and version_to_test is not None:
+            selected_files = [v[1] for v in available_variants if v[0] == version_to_test]
+            if selected_files:
+                ablation_bddl_file = selected_files[0]
 
-            # Skip episode if expert demonstration failed to complete the task
-            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
-                log_message(f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!", log_file)
-                continue
-
-            # Get initial state
-            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
-
-        log_message(f"Starting episode {task_episodes + 1}...", log_file)
-
-        # Run episode
-        success, replay_images, replay_states = run_episode(
-            cfg,
-            env,
-            task_description,
-            model,
-            resize_size,
-            processor,
-            action_head,
-            proprio_projector,
-            noisy_action_projector,
-            initial_state,
-            log_file,
-        )
-
-        # Update counters
-        task_episodes += 1
-        total_episodes += 1
-        if success:
-            task_successes += 1
-            total_successes += 1
-
-        # Save replay video
-        save_rollout_video(
-            {'image': replay_images, 'states': replay_states},
-            total_episodes, 
-            success=success, 
-            task_description=task_description, 
-            log_file=log_file,
+        # Initialize environment with this version
+        env, task_description, original_description = get_libero_env(
+            task,
             change_command=cfg.change_command,
             command_level=cfg.command_level,
-            run=cfg.run_id_note
+            ablation_bddl_file=ablation_bddl_file,
+            resolution=cfg.env_img_res
         )
 
-        # Log results
-        log_message(f"Success: {success}", log_file)
-        log_message(f"# episodes completed so far: {total_episodes}", log_file)
-        log_message(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)", log_file)
+        # Log version info
+        if version_to_test == "base":
+            version_label = cfg.command_level
+        elif version_to_test is not None:
+            version_label = f"{cfg.command_level}_v{version_to_test}"
+        else:
+            version_label = "default"
+        log_message("=" * 80, log_file)
+        log_message(f"Testing VERSION: {version_label}", log_file)
+        log_message(f"Original Command: {original_description}", log_file)
+        log_message(f"Variation Command: {task_description}", log_file)
+        log_message("=" * 80, log_file)
 
-    # Log task results
-    task_success_rate = float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
-    total_success_rate = float(total_successes) / float(total_episodes) if total_episodes > 0 else 0
+        task_episodes = 0
+        task_successes = 0
 
-    log_message(f"Current task success rate: {task_success_rate}", log_file)
-    log_message(f"Current total success rate: {total_success_rate}", log_file)
+        # Run 50 episodes for this version
+        for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task), desc=f"Version {version_label}"):
+            
+            log_message(f"\n[{version_label}] Episode {episode_idx + 1}/{cfg.num_trials_per_task}", log_file)
+           
+            # Handle initial state
+            if cfg.initial_states_path == "DEFAULT":
+                initial_state = initial_states[episode_idx]
+            else:
+                initial_states_task_key = task_description.replace(" ", "_")
+                episode_key = f"demo_{episode_idx}"
 
-    # Log to wandb if enabled
-    if cfg.use_wandb:
-        wandb.log(
-            {
-                f"success_rate/{task_description}": task_success_rate,
-                f"num_episodes/{task_description}": task_episodes,
-            }
-        )
+                if not all_initial_states[initial_states_task_key][episode_key]["success"]:
+                    log_message(f"Skipping episode {episode_idx} (failed expert demo)", log_file)
+                    continue
 
-    # Close environment and force cleanup to prevent EGL context leaks
-    try:
-        env.close()
-        log_message("Environment closed successfully", log_file)
-    except Exception as e:
-        log_message(f"Warning: Error closing environment: {e}", log_file)
+                initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
+
+            log_message(f"Starting episode {task_episodes + 1}...", log_file)
+
+            # Run episode
+            success, replay_images, replay_states = run_episode(
+                cfg,
+                env,
+                task_description,
+                model,
+                resize_size,
+                processor,
+                action_head,
+                proprio_projector,
+                noisy_action_projector,
+                initial_state,
+                log_file,
+            )
+           
+            task_episodes += 1
+            total_episodes += 1
+            if success:
+                task_successes += 1
+                total_successes += 1
+
+            save_rollout_video(
+                {'image': replay_images, 'states': replay_states},
+                total_episodes,
+                success=success,
+                task_description=task_description,
+                log_file=log_file,
+                change_command=cfg.change_command,
+                command_level=cfg.command_level,
+                run=cfg.run_id_note
+            )
+           
+            # Log results
+            log_message(f"Success: {success}", log_file)
+            log_message(f"Total episodes so far: {total_episodes}", log_file)
+            log_message(f"Total successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)", log_file)
+
+        # Version results
+        version_success_rate = float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
+        log_message(f"\n{'='*80}", log_file)
+        log_message(f"VERSION {version_label} RESULTS:", log_file)
+        log_message(f"  Episodes: {task_episodes}", log_file)
+        log_message(f"  Successes: {task_successes}", log_file)
+        log_message(f"  Success Rate: {version_success_rate:.1%}", log_file)
+        log_message(f"{'='*80}\n", log_file)
+        
+        task_results_per_version[version_label] = {
+            'success_rate': version_success_rate,
+            'episodes': task_episodes,
+            'successes': task_successes
+        }
+
+        # Close environment and cleanup
+        try:
+            env.close()
+        except:
+            pass
+        
+        gc.collect()
+
+    # Calculate overall task success rate
+    total_task_episodes = sum(r['episodes']  for r in task_results_per_version.values())
+    total_task_successes = sum(r['successes'] for r in task_results_per_version.values())
+    task_success_rate = float(total_task_successes) / float(total_task_episodes) if total_task_episodes > 0 else 0
     
-    # Force garbage collection to free GPU memory
-    gc.collect()
-    log_message("Forced garbage collection after task", log_file)
+    # Print summary of all versions tested
+    if len(versions_to_test) > 1:
+        log_message("=" * 80, log_file)
+        log_message("SUMMARY BY VERSION:", log_file)
+        log_message("-" * 80, log_file)
+        for version_label, results in task_results_per_version.items():
+            sr = results['success_rate']
+            succ = results['successes']
+            eps = results['episodes']
+            log_message(f"  {version_label:>10}: {sr:.1%} ({succ}/{eps} episodes)", log_file)
+        log_message("-" * 80, log_file)
+        log_message(
+            f"  {'OVERALL':>10}: {task_success_rate:.1%} ({total_task_successes}/{total_task_episodes} episodes)",
+            log_file
+        )
+        log_message("=" * 80, log_file)
+    else:
+        log_message("=" * 80, log_file)
+        log_message(f"TASK SUCCESS RATE: {task_success_rate:.1%} ({total_task_successes}/{total_task_episodes} episodes)", log_file)
+        log_message("=" * 80, log_file)
 
-    return total_episodes, total_successes, task_description, task_success_rate, task_episodes
+    return total_episodes, total_successes, task_description, task_success_rate, total_task_episodes
 
 def print_results_table(task_results, command_levels, all_results):
     """Print a summary table of results by task and command level."""
@@ -618,6 +713,12 @@ def eval_libero(cfg: GenerateConfig) -> float:
     
     # Validate configuration
     validate_config(cfg)
+    
+    # Initialize action queue
+    if cfg.num_open_loop_steps != NUM_ACTIONS_CHUNK:
+        print(f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match the NUM_ACTIONS_CHUNK "
+               "{NUM_ACTIONS_CHUNK} constant defined in prismatic.vla.constants! For best performance (in terms of "
+               "both speed and success rate), we recommend executing the full action chunk.")
 
     # Set random seed
     set_seed_everywhere(cfg.seed)
