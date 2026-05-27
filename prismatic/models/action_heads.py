@@ -5,7 +5,6 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
-from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from prismatic.vla.constants import ACTION_DIM, ACTION_TOKEN_BEGIN_IDX, IGNORE_INDEX, NUM_ACTIONS_CHUNK, PROPRIO_DIM, STOP_INDEX
 
 
@@ -156,6 +155,8 @@ class DiffusionActionHead(nn.Module):
         num_diffusion_steps=100,
     ):
         super().__init__()
+        from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+
         self.action_dim = action_dim
         self.noise_predictor = NoisePredictionModel(
             transformer_hidden_dim=hidden_dim*ACTION_DIM, hidden_dim=hidden_dim, action_dim=action_dim

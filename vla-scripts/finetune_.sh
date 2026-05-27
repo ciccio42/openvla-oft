@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH -A hpc_default
+#SBATCH -A did_robot_learning_359
 #SBATCH --partition=gpuq
 #SBATCH --nodes=1                    # Number of nodes
 #SBATCH --ntasks-per-node=1           # Only ONE task per node!

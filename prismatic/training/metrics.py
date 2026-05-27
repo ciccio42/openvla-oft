@@ -13,7 +13,10 @@ from typing import Any, Dict, Optional, Protocol, Tuple, Union
 import jsonlines
 import numpy as np
 import torch
-import wandb
+try:
+    import wandb
+except Exception:
+    wandb = None
 
 from prismatic.overwatch import initialize_overwatch
 
@@ -59,6 +62,10 @@ class WeightsBiasesTracker:
         entity: Optional[str] = None,
         group: str = "align",
     ) -> None:
+        if wandb is None:
+            raise ImportError(
+                "Weights & Biases tracker requested, but wandb (or its dependencies) is unavailable."
+            )
         self.run_id, self.run_dir, self.hparams = run_id, run_dir, hparams
 
         # Get W&B-Specific Initialization Parameters

@@ -18,6 +18,7 @@ import copy
 import time
 
 
+
 def change_bddl_file(bddl_file, spawn_train_distribution=True):
     
     # get the problem info from the bddl file    
@@ -46,14 +47,14 @@ def change_bddl_file(bddl_file, spawn_train_distribution=True):
         parsed_bddl['regions']['floor_target_object_region']['ranges'] = new_spawn_region
         
         # change if other objects have the same spawn region
-        changed_region_name = None
+        changed_object = None
         for key in parsed_bddl['regions'].keys():
             if 'other_object' in key:
                 region = parsed_bddl['regions'][key]['ranges']
                 if region == new_spawn_region:
                     # change with the previous spawn region
                     parsed_bddl['regions'][key]['ranges'] = current_spawn_region
-                    changed_region_name = key.split('floor_')[1]
+                    changed_object = key.split('floor_')[1]                    
                     break
                 
         # write the new bddl file
@@ -62,17 +63,10 @@ def change_bddl_file(bddl_file, spawn_train_distribution=True):
             old_bddl_content = f.readlines()
             new_bddl_content = copy.deepcopy(old_bddl_content)
             
-        in_regions_block = False
         for row_indx, row in enumerate(old_bddl_content):
-            stripped = row.strip()
-            if stripped.startswith('(:regions'):
-                in_regions_block = True
-            elif stripped.startswith('(:fixtures'):
-                in_regions_block = False
-
-            if in_regions_block and '(target_object_region' in row:
+            if '(target_object_region' in row:
                 new_bddl_content[row_indx + 3] = f'              ({new_spawn_region[0][0]} {new_spawn_region[0][1]} {new_spawn_region[0][2]} {new_spawn_region[0][3]})\n'
-            if in_regions_block and changed_region_name is not None and f'({changed_region_name}' in stripped:
+            if changed_object in row:
                 new_bddl_content[row_indx + 3] = f'              ({current_spawn_region[0][0]} {current_spawn_region[0][1]} {current_spawn_region[0][2]} {current_spawn_region[0][3]})\n'
         
         # write the new bddl file
@@ -96,14 +90,14 @@ def change_bddl_file(bddl_file, spawn_train_distribution=True):
         parsed_bddl['regions']['floor_target_object_region']['ranges'] = new_spawn_region
         
         # change if other objects have the same spawn region
-        changed_region_name = None
+        changed_object = None
         for key in parsed_bddl['regions'].keys():
             if 'other_object' in key:
                 region = parsed_bddl['regions'][key]['ranges']
                 if region == new_spawn_region:
                     # change with the previous spawn region
                     parsed_bddl['regions'][key]['ranges'] = current_spawn_region
-                    changed_region_name = key.split('floor_')[1]
+                    changed_object = key.split('floor_')[1]                    
                     break
                 
         # write the new bddl file
@@ -112,17 +106,10 @@ def change_bddl_file(bddl_file, spawn_train_distribution=True):
             old_bddl_content = f.readlines()
             new_bddl_content = copy.deepcopy(old_bddl_content)
             
-        in_regions_block = False
         for row_indx, row in enumerate(old_bddl_content):
-            stripped = row.strip()
-            if stripped.startswith('(:regions'):
-                in_regions_block = True
-            elif stripped.startswith('(:fixtures'):
-                in_regions_block = False
-
-            if in_regions_block and '(target_object_region' in row:
+            if '(target_object_region' in row:
                 new_bddl_content[row_indx + 3] = f'              ({new_spawn_region[0][0]} {new_spawn_region[0][1]} {new_spawn_region[0][2]} {new_spawn_region[0][3]})\n'
-            if in_regions_block and changed_region_name is not None and f'({changed_region_name}' in stripped:
+            if changed_object in row:
                 new_bddl_content[row_indx + 3] = f'              ({current_spawn_region[0][0]} {current_spawn_region[0][1]} {current_spawn_region[0][2]} {current_spawn_region[0][3]})\n'
         
         # write the new bddl file
@@ -131,40 +118,20 @@ def change_bddl_file(bddl_file, spawn_train_distribution=True):
             f.writelines(new_bddl_content)
         time.sleep(5)  # Ensure the file is written before returning
         return new_bbdl_file
+        
 
-def get_libero_env(
-    task,
-    model_family,
-    change_spawn=False,
-    train_spawn_distribution=True,
-    resolution=256,
-    max_spawn_resamples=10,
-    stabilization_steps=15,
-    env_seed=None,
-):
+def get_libero_env(task, model_family, change_spawn=False, train_spawn_distribution=True, resolution=256):
     """Initializes and returns the LIBERO environment, along with the task description."""
     task_description = task.language
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
     
-    if not change_spawn:
-        env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
-        env = OffScreenRenderEnv(**env_args)
-        seed = 0 if env_seed is None else int(env_seed)
-        env.seed(seed)  # Seed controls object placement stochasticity at reset.
-        return env, task_description
-
-    # Resample modified BDDL until scene is physically valid at reset.
-    for _ in range(max_spawn_resamples):
-        candidate_bddl_file = change_bddl_file(task_bddl_file, train_spawn_distribution)
-        env_args = {"bddl_file_name": candidate_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
-        env = OffScreenRenderEnv(**env_args)
-        if env_seed is not None:
-            env.seed(int(env_seed))
-        return env, task_description
-
-    raise RuntimeError(
-        f"Unable to sample a valid spawn configuration after {max_spawn_resamples} attempts for task {task.bddl_file}"
-    )
+    if change_spawn:
+        task_bddl_file = change_bddl_file(task_bddl_file, train_spawn_distribution)
+        
+    env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
+    env = OffScreenRenderEnv(**env_args)
+    env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
+    return env, task_description
 
 
 def get_libero_dummy_action(model_family: str):
@@ -186,9 +153,9 @@ def get_libero_wrist_image(obs):
     return img
 
 
-def save_rollout_video(rollout_traj, idx, success, task_description, log_file=None, dataset_name="libero", run=0, change_spawn=False, train_spawn_distribution=True):
+def save_rollout_video(rollout_traj, idx, success, task_description, log_file=None, model_name=None,dataset_name="libero", run=0, change_spawn=False, train_spawn_distribution=True):
     """Saves an MP4 replay of an episode."""
-    rollout_dir = f"./rollouts/{dataset_name}/change_spawn_{change_spawn}_train_{train_spawn_distribution}/run_{run}"
+    rollout_dir = f"./rollouts/{model_name}/{dataset_name}/change_spawn_{change_spawn}_train_{train_spawn_distribution}/run_{run}"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
     mp4_path = f"{rollout_dir}/{DATE_TIME}--episode={idx}--success={success}--task={processed_task_description}.mp4"

@@ -801,10 +801,17 @@ def finetune(cfg: FinetuneConfig) -> None:
     cfg.vla_path = cfg.vla_path.rstrip("/")
     print(f"Fine-tuning OpenVLA Model `{cfg.vla_path}` on `{cfg.dataset_name}`")
 
-    if 'rm_12_13_14_15' in cfg.dataset_name:
-        seed_everything(seed=0)
+    # if 'rm_12_13_14_15' in cfg.dataset_name:
+    #     seed_everything(seed=0)
+    # else:
+    # extract seed from run_dir name if it exists; otherwise, use default seed of 7
+    run_root_dir_name = Path(cfg.run_root_dir).name
+    if 'seed_' in run_root_dir_name:
+        seed = int(run_root_dir_name.split('seed_')[-1])
     else:
-        seed_everything(seed=42)
+        seed = 42
+    print(f"Using seed: {seed}")
+    seed_everything(seed=seed)
 
     # Get experiment run ID
     run_id = get_run_id(cfg)

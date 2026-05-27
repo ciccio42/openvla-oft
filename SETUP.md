@@ -9,8 +9,8 @@ conda activate openvla-oft
 
 # Install PyTorch
 # Use a command specific to your machine: https://pytorch.org/get-started/locally/
-pip install torch==2.2.0+cu118 torchvision==0.16.0+cu118 -f https://download.pytorch.org
-/whl/torch_stable.html
+pip install torch==2.2.0+cu121 torchvision==0.17.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
 
 # Clone openvla-oft repo and pip install to download dependencies
 git clone https://github.com/moojink/openvla-oft.git

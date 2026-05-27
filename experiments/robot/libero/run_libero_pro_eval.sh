@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #SBATCH -A did_robot_learning_359
 #SBATCH --partition=aiq
 #SBATCH --gres=gpu:1
@@ -15,7 +14,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 # Add the path to LIBERO folder to PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/LIBERO
 export PYTHONPATH=$PYTHONPATH:/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/openvla-oft/transformers-openvla-oft
-export LIBERO_CONFIG_PATH="/mnt/beegfs/frosa/.libero"
+export LIBERO_CONFIG_PATH="/mnt/beegfs/frosa/.libero_pro"
 
 RUN_ID=$1
 ID_NOTE=parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img-gripper_img-proprio
@@ -25,7 +24,7 @@ echo "Running evaluation for run ${RUN_ID} with ID note: ${ID_NOTE}"
 if [ "$RUN_ID" -ne 1 ]; then
     SAVE=False
 fi
-srun torchrun --standalone --nnodes 1 --nproc-per-node 1 run_libero_eval.py \
+srun torchrun --standalone --nnodes 1 --nproc-per-node 1 run_libero_pro_eval.py \
     --pretrained_checkpoint ${MODEL_PATH} \
     --num_images_in_input 2 \
     --use_proprio True \
@@ -33,8 +32,9 @@ srun torchrun --standalone --nnodes 1 --nproc-per-node 1 run_libero_eval.py \
     --wandb_project "Open_VLA_OFT_finetune" \
     --run_id_note ${ID_NOTE} \
     --task_suite_name "libero_object" \
+    --initial_states_path "/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/openvla-oft/experiments/robot/libero/LIBERO_PRO/libero/libero/init_files/libero_goal_swap" \
     --run_number ${RUN_ID} \
-    --change_spawn True \
+    --change_spawn False \
     --spawn_train_distribution False \
-    --debug False
+    --debug True
  

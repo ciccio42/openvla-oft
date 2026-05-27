@@ -24,7 +24,6 @@ json_numpy.patch()
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
-from prismatic.models.action_heads import DiffusionActionHead, L1RegressionActionHead
 from prismatic.models.film_vit_wrapper import FiLMedPrismaticVisionBackbone
 from prismatic.models.projectors import NoisyActionProjector, ProprioProjector
 from prismatic.vla.constants import (
@@ -460,7 +459,7 @@ def get_noisy_action_projector(cfg: Any, llm_dim: int) -> NoisyActionProjector:
     return noisy_action_projector
 
 
-def get_action_head(cfg: Any, llm_dim: int) -> Union[L1RegressionActionHead, DiffusionActionHead]:
+def get_action_head(cfg: Any, llm_dim: int) -> Any:
     """
     Get action head for continuous value prediction.
 
@@ -478,8 +477,10 @@ def get_action_head(cfg: Any, llm_dim: int) -> Union[L1RegressionActionHead, Dif
 
     # Initialize appropriate action head based on configuration
     if cfg.use_l1_regression:
+        from prismatic.models.action_heads import L1RegressionActionHead
         action_head = L1RegressionActionHead(input_dim=llm_dim, hidden_dim=llm_dim, action_dim=ACTION_DIM)
     elif cfg.use_diffusion:
+        from prismatic.models.action_heads import DiffusionActionHead
         action_head = DiffusionActionHead(
             input_dim=llm_dim, hidden_dim=llm_dim, action_dim=ACTION_DIM, num_diffusion_steps=cfg.num_diffusion_steps
         )

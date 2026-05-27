@@ -1,7 +1,7 @@
 """
-run_libero_eval.py
+run_libero_plus_eval.py
 
-Evaluates a trained policy in a LIBERO simulation benchmark task suite.
+Evaluates a trained policy in a LIBERO-PLUS simulation benchmark task suite.
 """
 
 import json
@@ -19,11 +19,11 @@ import numpy as np
 import tqdm
 from libero.libero import benchmark
 from PIL import Image
-import wandb
+import copy
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
-from experiments.robot.libero.libero_utils import (
+from experiments.robot.libero_plus.libero_utils import (
     get_libero_dummy_action,
     get_libero_env,
     get_libero_image,
@@ -78,6 +78,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _extract_object_positions_from_obs(obs: dict) -> dict:
+    """Extract object xyz positions from observation dict."""
+    object_positions = {}
+    for k, v in obs.items():
+        if not k.endswith("_pos"):
+            continue
+        if k.startswith("robot0_"):
+            continue
+        try:
+            arr = np.asarray(v, dtype=np.float32).reshape(-1)
+        except Exception:
+            continue
+        if arr.shape[0] >= 3:
+            object_positions[k[:-4]] = arr[:3].tolist()
+    return object_positions
+
+
+def _first_reached_object(
+    eef_xyz: np.ndarray,
+    object_positions: dict,
+    threshold_m: float = 0.08,
+):
+    """Return nearest reached object within threshold, else None."""
+    if not object_positions:
+        return None
+    best_name, best_pos, best_dist = None, None, None
+    for name, pos in object_positions.items():
+        pos_arr = np.asarray(pos, dtype=np.float32).reshape(-1)
+        if pos_arr.shape[0] < 3:
+            continue
+        dist = float(np.linalg.norm(eef_xyz[:3] - pos_arr[:3]))
+        if best_dist is None or dist < best_dist:
+            best_name, best_pos, best_dist = name, pos_arr[:3], dist
+    if best_name is not None and best_dist is not None and best_dist <= threshold_m:
+        return {
+            "object_name": best_name,
+            "object_pos": best_pos.tolist(),
+            "distance_m": best_dist,
+        }
+    return None
+
+
 @dataclass
 class GenerateConfig:
     # fmt: off
@@ -128,6 +170,9 @@ class GenerateConfig:
     debug: bool = False  
     change_spawn: bool = True  # Whether to change spawn region of target object in the environment
     spawn_train_distribution: bool = False  # Whether to use the training spawn distribution for the target object
+    enrich_existing_rollouts_only: bool = False  # If True, do not run env rollouts; only augment existing .npy files
+    overwrite_existing_enrichment: bool = False   # If True, overwrite enrichment fields in .npy files
+    env_init_max_retries: int = 10                # Retries for env init when object placement randomization fails
     # fmt: on
 
 
@@ -208,6 +253,7 @@ def setup_logging(cfg: GenerateConfig):
 
     # Initialize Weights & Biases logging if enabled
     if cfg.use_wandb:
+        import wandb
         wandb.init(
             entity=cfg.wandb_entity,
             project=cfg.wandb_project,
@@ -223,6 +269,42 @@ def log_message(message: str, log_file=None):
     if log_file:
         log_file.write(message + "\n")
         log_file.flush()
+
+
+def _collect_stabilized_bin_target_positions_from_env(cfg: GenerateConfig, env, obs, log_file=None):
+    """Use an already-initialized env/obs, run stabilization dummy steps, collect bin/target positions."""
+    replay_enrichment = {
+        "bin_position": [],
+        "target_object_positions": [],
+        "target_object_name": [],
+    }
+
+    t = 0
+    while t <= cfg.num_steps_wait:
+        obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+        if t == cfg.num_steps_wait:
+            if "libero_object" in cfg.task_suite_name:
+                # get basket position after stabilization
+                if "basket_1_pos" in obs.keys():
+                    basket_pos = obs["basket_1_pos"]
+                    log_message(f"Basket position after stabilization: {basket_pos}", log_file)
+                    replay_enrichment["bin_position"].append(list(basket_pos))
+
+                # get target object position after stabilization
+                for obj_name in env.obj_of_interest:
+                    if "basket_1" not in obj_name:
+                        obj_pos = obs[obj_name + "_pos"]
+                        log_message(
+                            f"Target object {obj_name} position after stabilization: {obj_pos}",
+                            log_file,
+                        )
+                        replay_enrichment["target_object_positions"].append(list(obj_pos))
+                        replay_enrichment["target_object_name"].append(obj_name)
+                        break
+        t += 1
+
+    return replay_enrichment
+
 
 
 def load_initial_states(cfg: GenerateConfig, task_suite, task_id: int, log_file=None):
@@ -290,40 +372,6 @@ def run_episode(
     log_file=None,
 ):
     """Run a single episode in the environment."""
-    def _resample_target_xy_within_region_once(env):
-        """Force a fresh target XY sample inside floor_target_object_region for this episode."""
-        parsed = getattr(env.env, "parsed_problem", None)
-        if not parsed:
-            return
-        regions = parsed.get("regions", {})
-        target_region = regions.get("floor_target_object_region", {})
-        ranges = target_region.get("ranges", [])
-        if not ranges:
-            return
-        # LIBERO stores one rectangle as [xmin, ymin, xmax, ymax]
-        xmin, ymin, xmax, ymax = ranges[0]
-        x = np.random.uniform(min(xmin, xmax), max(xmin, xmax))
-        y = np.random.uniform(min(ymin, ymax), max(ymin, ymax))
-
-        target_name = None
-        for obj_name in getattr(env, "obj_of_interest", []):
-            if "basket_1" not in obj_name:
-                target_name = obj_name
-                break
-        if target_name is None:
-            return
-        target_obj = env.env.objects_dict.get(target_name, None)
-        if target_obj is None or not getattr(target_obj, "joints", None):
-            return
-
-        qpos = env.sim.data.get_joint_qpos(target_obj.joints[0]).copy()
-        if len(qpos) < 7:
-            return
-        qpos[0] = x
-        qpos[1] = y
-        env.sim.data.set_joint_qpos(target_obj.joints[0], qpos)
-        env.sim.forward()
-
     # Reset environment
     env.reset()
 
@@ -333,9 +381,6 @@ def run_episode(
     else:
         # env.set_init_state(initial_state)
         obs =  env.reset() #env.get_observation()
-        if cfg.change_spawn:
-            _resample_target_xy_within_region_once(env)
-            obs = env.env._get_observations()
         # fix the position of the bin
         # due to problem with the initialization of the environment
         # For test with different spawn regions this is not a problem
@@ -364,11 +409,12 @@ def run_episode(
     replay_traj['task_command'] = task_description
     replay_traj['actions'] = []
     replay_traj['states'] = []
-    replay_traj['target_object_positions'] = []
-    replay_traj['target_object_name'] = []
-    replay_traj['bin_position'] = []
     
-    
+    if 'libero_object' in cfg.task_suite_name:
+        replay_traj['target_object_positions'] = []
+        replay_traj['target_object_name'] = []
+        replay_traj['bin_position'] = []
+        
     max_steps = TASK_MAX_STEPS[cfg.task_suite_name]
 
     # Run episode
@@ -380,29 +426,28 @@ def run_episode(
                 obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
                 t += 1
                 continue
-
-            if t == cfg.num_steps_wait:
-                # Capture stabilized spawn information once, before policy actions start.
-                if 'basket_1_pos' in obs:
-                    basket_pos = obs['basket_1_pos']
-                    log_message(f"Basket position after stabilization: {basket_pos}", log_file)
-                    replay_traj['bin_position'].append(list(basket_pos))
-
-                for obj_name in getattr(env, "obj_of_interest", []):
-                    if 'basket_1' in obj_name:
-                        continue
-                    key = f"{obj_name}_pos"
-                    if key in obs:
-                        obj_pos = obs[key]
-                        log_message(f"Target object {obj_name} position after stabilization: {obj_pos}", log_file)
-                        replay_traj['target_object_positions'].append(list(obj_pos))
-                        replay_traj['target_object_name'].append(obj_name)
-                        break
+            
+            if t == cfg.num_steps_wait:    
+                if 'libero_object' in cfg.task_suite_name:
+                    # get basket position after stabilization
+                    if 'basket_1_pos' in obs.keys():
+                        basket_pos = obs['basket_1_pos']
+                        log_message(f"Basket position after stabilization: {basket_pos}", log_file)
+                        replay_traj['bin_position'].append(list(basket_pos))
+                    
+                    # get target object position after stabilization
+                    for obj_name in env.obj_of_interest:
+                        if 'basket_1' not in obj_name:
+                            obj_pos = obs[obj_name + '_pos']
+                            log_message(f"Target object {obj_name} position after stabilization: {obj_pos}", log_file)
+                            replay_traj['target_object_positions'].append(list(obj_pos))
+                            replay_traj['target_object_name'].append(obj_name)
+                            break
 
             # Prepare observation
             observation, img = prepare_observation(obs, resize_size)
             replay_traj['image'].append(img)
-            
+
             # Append state to replay trajectory
             replay_traj['states'].append(observation['state'].tolist())
 
@@ -431,7 +476,9 @@ def run_episode(
 
             # Execute action in environment
             obs, reward, done, info = env.step(action.tolist())
+            # flip the image along horizontal axis to correct for the horizontal flip in the camera view in the environment
             pil_img = Image.fromarray(obs['agentview_image'])
+            pil_img = pil_img.transpose(Image.FLIP_LEFT_RIGHT)
             pil_img.save(os.path.join(cfg.local_log_dir, f"step.png"))
             if done:
                 success = True
@@ -442,107 +489,6 @@ def run_episode(
         log_message(f"Episode error: {e}", log_file)
 
     return success, replay_traj
-
-def _collect_spawn_positions_from_obs(obs, env):
-    """Extract bin and target-object positions from observation after stabilization."""
-    bin_position = None
-    target_positions = []
-    target_names = []
-
-    if isinstance(obs, dict):
-        if "basket_1_pos" in obs:
-            bin_position = np.asarray(obs["basket_1_pos"], dtype=np.float32).reshape(-1)[:3].tolist()
-
-        obj_of_interest = getattr(env, "obj_of_interest", [])
-        for obj_name in obj_of_interest:
-            if "basket_1" in obj_name:
-                continue
-            key = f"{obj_name}_pos"
-            if key in obs:
-                pos = np.asarray(obs[key], dtype=np.float32).reshape(-1)
-                if pos.shape[0] >= 3:
-                    target_positions.append(pos[:3].tolist())
-                    target_names.append(obj_name)
-                    break
-
-    return {
-        "bin_position": [bin_position] if bin_position is not None else [],
-        "target_object_positions": target_positions,
-        "target_object_name": target_names,
-    }
-
-
-def enrich_episode_with_spawn_info(
-    episode_file,
-    env,
-    cfg: GenerateConfig,
-    initial_states,
-    all_initial_states,
-    task_description: str,
-    log_file=None,
-):
-    """Enrich one saved rollout .npy with bin/target object spawn positions."""
-    npy_path = str(episode_file)
-    try:
-        data = np.load(npy_path, allow_pickle=True).item()
-    except Exception as e:
-        log_message(f"Failed to load rollout for enrichment: {npy_path} ({e})", log_file)
-        return
-
-    # Parse episode id from filename to replay matching init-state setup.
-    try:
-        episode_idx = int(os.path.basename(npy_path).split("episode=")[-1].split("--")[0])
-    except Exception:
-        log_message(f"Could not parse episode id from filename, skipping enrichment: {npy_path}", log_file)
-        return
-
-    # If already present, keep existing values unless explicitly empty.
-    has_bin = "bin_position" in data and data["bin_position"] is not None and len(data["bin_position"]) > 0
-    has_target = (
-        "target_object_positions" in data
-        and data["target_object_positions"] is not None
-        and len(data["target_object_positions"]) > 0
-    )
-    if has_bin and has_target:
-        return
-
-    # Match initialization path used during rollout.
-    if cfg.initial_states_path == "DEFAULT":
-        initial_state = initial_states[episode_idx]
-    else:
-        initial_states_task_key = task_description.replace(" ", "_")
-        episode_key = f"demo_{episode_idx}"
-        try:
-            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
-                log_message(
-                    f"Skipping enrichment for episode {episode_idx}: failed expert demo in initial states.",
-                    log_file,
-                )
-                return
-            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
-        except Exception as e:
-            log_message(f"Initial-state lookup failed for episode {episode_idx}: {e}", log_file)
-            return
-
-    if cfg.change_spawn:
-        initial_state = None
-
-    # Recreate scene and wait for stabilization.
-    env.reset()
-    if initial_state is not None:
-        obs = env.set_init_state(initial_state)
-    else:
-        obs = env.reset()
-
-    for _ in range(cfg.num_steps_wait):
-        obs, _, _, _ = env.step(get_libero_dummy_action(cfg.model_family))
-
-    enrich = _collect_spawn_positions_from_obs(obs, env)
-    data["bin_position"] = enrich["bin_position"]
-    data["target_object_positions"] = enrich["target_object_positions"]
-    data["target_object_name"] = enrich["target_object_name"]
-    np.save(npy_path, data)
-    log_message(f"Enriched rollout with spawn info: {npy_path}", log_file)
 
 
 def run_task(
@@ -568,64 +514,105 @@ def run_task(
     
     initial_states, all_initial_states = load_initial_states(cfg, task_suite, task_id, log_file)
     
-    # Initialize environment and get task description
-    env, task_description = get_libero_env(task, 
-                                           cfg.model_family, 
-                                           resolution=cfg.env_img_res,
-                                           change_spawn=cfg.change_spawn,
-                                           train_spawn_distribution=cfg.spawn_train_distribution,
-                                           env_seed=cfg.seed + task_id)
-    
-    # get the episode already recorded in the environment
-    rollout_dir = f"./rollouts/{cfg.task_suite_name}/change_spawn_{cfg.change_spawn}_train_{cfg.spawn_train_distribution}/run_{cfg.run_number}"
-    episode_full_list = glob.glob(os.path.join(rollout_dir, "*.npy"))
-    completed_episode_ids = set()
-    for episode in episode_full_list:
+    # Initialize environment and get task description. Some randomized scenes can be infeasible;
+    # retry a few times so one bad placement does not abort the whole job.
+    env, task_description = None, task.language
+    for attempt in range(1, max(1, cfg.env_init_max_retries) + 1):
         try:
-            completed_episode_ids.add(int(episode.split("episode=")[-1].split("--")[0]))
-            
-            # enrich current npy with target object and bin positions
-            enrich_episode_with_spawn_info(
-                episode_file=episode,
-                env=env,
-                cfg=cfg,
-                initial_states=initial_states,
-                all_initial_states=all_initial_states,
-                task_description=task_description,
-                log_file=log_file,
-            )
-            
-        except Exception:
-            # Ignore malformed filenames and keep evaluating.
-            continue
-    
-    
-    
-    # Start episodes
-    task_episodes, task_successes = 0, 0
-    for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
-        if total_episodes in completed_episode_ids:
-            log_message(f"Skipping episode {total_episodes} as it already exists in {rollout_dir}", log_file)
-            total_episodes += 1
-            continue
-
-        # When spawn randomization is enabled, rebuild env per episode so a new BDDL spawn
-        # configuration is sampled each rollout (instead of once per task).
-        if cfg.change_spawn:
-            episode_env_seed = cfg.seed + (task_id * 100000) + episode_idx
-            try:
-                env.close()
-            except Exception:
-                pass
             env, task_description = get_libero_env(
                 task,
                 cfg.model_family,
                 resolution=cfg.env_img_res,
                 change_spawn=cfg.change_spawn,
                 train_spawn_distribution=cfg.spawn_train_distribution,
-                env_seed=episode_env_seed,
             )
-            log_message(f"Rebuilt env with seed={episode_env_seed} for randomized spawn.", log_file)
+            break
+        except Exception as e:
+            log_message(
+                f"Env init failed for task_id={task_id} ({task_description}), attempt "
+                f"{attempt}/{max(1, cfg.env_init_max_retries)}: {e}",
+                log_file,
+            )
+
+    if env is None:
+        log_message(
+            f"Skipping task_id={task_id} after {max(1, cfg.env_init_max_retries)} failed env-init attempts.",
+            log_file,
+        )
+        return total_episodes, total_successes
+        
+    # get the episode already recorded in the environment
+    rollout_dir = f"./rollouts/{cfg.pretrained_checkpoint.split('/')[-1]}/{cfg.task_suite_name}/change_spawn_{cfg.change_spawn}_train_{cfg.spawn_train_distribution}/run_{cfg.run_number}"
+    episode_full_list = glob.glob(os.path.join(rollout_dir, "*.npy"))
+    episode_full_list.sort(key = lambda x: int(x.split("episode=")[-1].split("--")[0]) if "episode=" in x else -1)
+    completed_episode_ids = set()
+    episode_path_by_id = {}
+    for episode in episode_full_list:
+        try:
+            ep_id = int(episode.split("episode=")[-1].split("--")[0])
+            completed_episode_ids.add(ep_id)
+            episode_path_by_id[ep_id] = episode
+        except Exception:
+            # Ignore malformed filenames and keep evaluating.
+            continue
+    
+    
+    # Start episodes
+    task_episodes, task_successes = 0, 0
+    for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
+        
+        if total_episodes+1 in completed_episode_ids:
+            
+            if cfg.enrich_existing_rollouts_only:
+                npy_path = episode_path_by_id.get(total_episodes+1, None)
+                if npy_path is not None:
+                    try:
+                        data = np.load(npy_path, allow_pickle=True).item()
+                        if (not cfg.overwrite_existing_enrichment) and ("bin_position" in data) and ("target_object_positions" in data):
+                            log_message(f"Skipping enrichment for episode {total_episodes+1}, already enriched.", log_file)
+                            total_episodes += 1
+                            continue
+
+                        # Handle initial state exactly like evaluation path.
+                        if cfg.initial_states_path == "DEFAULT":
+                            initial_state = initial_states[episode_idx]
+                        else:
+                            initial_states_task_key = task_description.replace(" ", "_")
+                            episode_key = f"demo_{episode_idx}"
+                            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
+                                log_message(
+                                    f"Skipping enrichment for task {task_id} episode {episode_idx} due to failed expert demo!",
+                                    log_file,
+                                )
+                                total_episodes += 1
+                                continue
+                            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
+
+                        if cfg.change_spawn:
+                            initial_state = None
+
+                        # Initialize env and stabilize before collecting positions.
+                        env.reset()
+                        if initial_state is not None:
+                            obs = env.set_init_state(initial_state)
+                        else:
+                            obs = env.reset()
+
+                        enrich = _collect_stabilized_bin_target_positions_from_env(cfg, env, obs, log_file=log_file)
+                        data["bin_position"] = enrich["bin_position"]
+                        data["target_object_positions"] = enrich["target_object_positions"]
+                        data["target_object_name"] = enrich["target_object_name"]
+                        np.save(npy_path, data)
+                        log_message(f"Enriched existing rollout {npy_path}", log_file)
+                    except Exception as e:
+                        log_message(f"Failed enriching episode {total_episodes} at {npy_path}: {e}", log_file)
+                else:
+                    log_message(f"Could not find npy path for episode {total_episodes} in {rollout_dir}", log_file)
+            else:
+                log_message(f"Skipping episode {total_episodes} as it already exists in {rollout_dir}", log_file)
+            
+            total_episodes += 1
+            continue
         
         log_message(f"\nTask: {task_description}", log_file)
         # if episode_idx < len_episode_full_list:
@@ -652,6 +639,7 @@ def run_task(
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
         # Run episode
+        
         if cfg.change_spawn:
             log_message("Setting initial state with changed spawn region...", log_file)
             initial_state, all_initial_state = None, None
@@ -670,9 +658,8 @@ def run_task(
             initial_state,
             log_file,
         )
-        replay_traj['original_task_name'] = task.name
+        replay_traj['original_task_name'] = task.original_name
         replay_traj['task_name'] = task.name
-
         # Update counters
         task_episodes += 1
         total_episodes += 1
@@ -687,6 +674,7 @@ def run_task(
             success=success, 
             task_description=task_description, 
             log_file=log_file,
+            model_name=cfg.pretrained_checkpoint.split('/')[-1], 
             dataset_name=cfg.task_suite_name,
             run=cfg.run_number, 
             change_spawn=cfg.change_spawn,
@@ -701,11 +689,6 @@ def run_task(
     # Log task results
     task_success_rate = float(task_successes) / float(task_episodes) if task_episodes > 0 else 0
     total_success_rate = float(total_successes) / float(total_episodes) if total_episodes > 0 else 0
-
-    try:
-        env.close()
-    except Exception:
-        pass
 
     log_message(f"Current task success rate: {task_success_rate}", log_file)
     log_message(f"Current total success rate: {total_success_rate}", log_file)
@@ -752,6 +735,10 @@ def eval_libero(cfg: GenerateConfig) -> float:
     num_tasks = task_suite.n_tasks
 
     log_message(f"Task suite: {cfg.task_suite_name}", log_file)
+
+    # Fast path: only enrich existing rollout npy files; do not run simulation rollouts.
+    if cfg.enrich_existing_rollouts_only:
+        log_message("Running in enrich_existing_rollouts_only mode: will enrich saved .npy files in run_task.", log_file)
 
     # Start evaluation
     total_episodes, total_successes = 0, 0

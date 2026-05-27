@@ -14,7 +14,7 @@ OLD_RESUME_STEP = -1  # Set to -1 if you want to start from scratch
 RESUME = False
 RESUME_STEP = 0
 START_ITERATION = 1  # Starting iteration number
-RUN_ROOT_DIR = "/home/rsofnc000/checkpoint_save_folder/open_vla/new_baseline"
+RUN_ROOT_DIR = "/mnt/beegfs/frosa/checkpoint_save_folder/checkpoint_save_folder/open_vla/cuda-128/seed_7"
 DATASET_NAME = "ur5e_pick_place_rm_12_13_14_15" 
 # "ur5e_pick_place_rm_12_13_14_15"
 # "ur5e_pick_place_rm_central_spawn" 
@@ -22,7 +22,7 @@ DATASET_NAME = "ur5e_pick_place_rm_12_13_14_15"
 # #"ur5e_pick_place_removed_spawn_regions" 
 # #"ur5e_pick_place_delta_all" 
 # #"ur5e_pick_place_delta_removed_0_5_10_15"
-DATASET_FOLDER="/home/rsofnc000/Multi-Task-LFD-Framework/repo/open_x_embodiment/datasets"
+DATASET_FOLDER="/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/open_x_embodiment/datasets"
 
 if USE_PROPRIO:
     RUN_ID_NOTE = f"{DATASET_NAME}_parallel_dec--8_acts_chunk--continuous_acts--L1_regression--3rd_person_img-gripper_img-proprio"

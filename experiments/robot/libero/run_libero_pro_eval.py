@@ -14,12 +14,15 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
 import glob
+
+import yaml
 import draccus
 import numpy as np
 import tqdm
 from libero.libero import benchmark
 from PIL import Image
 import wandb
+from LIBERO_PRO import perturbation
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -56,7 +59,31 @@ class TaskSuite(str, Enum):
     LIBERO_OBJECT = "libero_object"
     LIBERO_GOAL = "libero_goal"
     LIBERO_10 = "libero_10"
-    LIBERO_90 = "libero_90"
+    LIBERO_90 = "libero_90" 
+    LIBERO_GOAL_TEMP = "libero_goal_temp"
+    LIBERO_SPATIAL_TEMP = "libero_spatial_temp"
+    LIBERO_10_TEMP = "libero_10_temp"
+    LIBERO_OBJECT_TEMP = "libero_object_temp"
+    LIBERO_GOAL_LAN = "libero_goal_lan"
+    LIBERO_SPATIAL_LAN = "libero_spatial_lan"
+    LIBERO_10_LAN = "libero_10_lan"
+    LIBERO_OBJECT_LAN = "libero_object_lan"
+    LIBERO_GOAL_OBJECT = "libero_goal_object"
+    LIBERO_SPATIAL_OBJECT = "libero_spatial_object"
+    LIBERO_10_OBJECT = "libero_10_object"
+    LIBERO_OBJECT_OBJECT = "libero_object_object"
+    LIBERO_GOAL_SWAP = "libero_goal_swap"
+    LIBERO_SPATIAL_SWAP = "libero_spatial_swap"
+    LIBERO_10_SWAP = "libero_10_swap"
+    LIBERO_OBJECT_SWAP = "libero_object_swap"
+    LIBERO_GOAL_TASK = "libero_goal_task"
+    LIBERO_SPATIAL_TASK = "libero_spatial_task"
+    LIBERO_10_TASK = "libero_10_task"
+    LIBERO_OBJECT_TASK = "libero_object_task"
+    LIBERO_GOAL_ENV = "libero_goal_env"
+    LIBERO_SPATIAL_ENV = "libero_spatial_env"
+    LIBERO_10_ENV = "libero_10_env"
+    LIBERO_OBJECT_ENV = "libero_object_env"
 
 
 # Define max steps for each task suite
@@ -66,6 +93,30 @@ TASK_MAX_STEPS = {
     TaskSuite.LIBERO_GOAL: 300,  # longest training demo has 270 steps
     TaskSuite.LIBERO_10: 520,  # longest training demo has 505 steps
     TaskSuite.LIBERO_90: 400,  # longest training demo has 373 steps
+    TaskSuite.LIBERO_GOAL_TEMP: 300,
+    TaskSuite.LIBERO_SPATIAL_TEMP: 220,
+    TaskSuite.LIBERO_10_TEMP: 520,
+    TaskSuite.LIBERO_OBJECT_TEMP: 280,
+    TaskSuite.LIBERO_GOAL_LAN: 300,
+    TaskSuite.LIBERO_SPATIAL_LAN: 220,
+    TaskSuite.LIBERO_10_LAN: 520,
+    TaskSuite.LIBERO_OBJECT_LAN: 280,
+    TaskSuite.LIBERO_GOAL_OBJECT: 300,
+    TaskSuite.LIBERO_SPATIAL_OBJECT: 220,
+    TaskSuite.LIBERO_10_OBJECT: 520,
+    TaskSuite.LIBERO_OBJECT_OBJECT: 280,
+    TaskSuite.LIBERO_GOAL_SWAP: 300,
+    TaskSuite.LIBERO_SPATIAL_SWAP: 220,
+    TaskSuite.LIBERO_10_SWAP: 520,
+    TaskSuite.LIBERO_OBJECT_SWAP: 280,
+    TaskSuite.LIBERO_GOAL_TASK: 300,
+    TaskSuite.LIBERO_SPATIAL_TASK: 220,
+    TaskSuite.LIBERO_10_TASK: 520,
+    TaskSuite.LIBERO_OBJECT_TASK: 280,
+    TaskSuite.LIBERO_GOAL_ENV: 300,
+    TaskSuite.LIBERO_SPATIAL_ENV: 220,
+    TaskSuite.LIBERO_10_ENV: 520,
+    TaskSuite.LIBERO_OBJECT_ENV: 280,
 }
 
 
@@ -129,6 +180,7 @@ class GenerateConfig:
     change_spawn: bool = True  # Whether to change spawn region of target object in the environment
     spawn_train_distribution: bool = False  # Whether to use the training spawn distribution for the target object
     # fmt: on
+    evaluation_config_path: str = "./LIBERO_PRO/evaluation_config.yaml"  # Path to evaluation configuration YAML file
 
 
 def validate_config(cfg: GenerateConfig) -> None:
@@ -144,7 +196,7 @@ def validate_config(cfg: GenerateConfig) -> None:
     assert cfg.task_suite_name in [suite.value for suite in TaskSuite], f"Invalid task suite: {cfg.task_suite_name}"
 
 
-def initialize_model(cfg: GenerateConfig):
+def initialize_model(cfg: GenerateConfig, evaluation_cfg=None) -> tuple:
     """Initialize model and associated components."""
     # Load model
     model = get_model(cfg)
@@ -172,15 +224,19 @@ def initialize_model(cfg: GenerateConfig):
     processor = None
     if cfg.model_family == "openvla":
         processor = get_processor(cfg)
-        check_unnorm_key(cfg, model)
+        check_unnorm_key(cfg, model, evaluation_cfg)
 
     return model, action_head, proprio_projector, noisy_action_projector, processor
 
 
-def check_unnorm_key(cfg: GenerateConfig, model) -> None:
+def check_unnorm_key(cfg: GenerateConfig, model, evaluation_cfg) -> None:
     """Check that the model contains the action un-normalization key."""
     # Initialize unnorm_key
-    unnorm_key = cfg.task_suite_name
+    if evaluation_cfg is not None:
+        # remove perturbation key from task suite name to get unnorm key when using perturbations
+        unnorm_key = evaluation_cfg.get("task_suite_name", "")
+    else:
+        unnorm_key = cfg.task_suite_name
 
     # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
     # with the suffix "_no_noops" in the dataset name)
@@ -229,6 +285,9 @@ def load_initial_states(cfg: GenerateConfig, task_suite, task_id: int, log_file=
     """Load initial states for the given task."""
     # Get default initial states
     initial_states = task_suite.get_task_init_states(task_id)
+
+    # Create path to init file based on task suite and task id
+    
 
     # If using custom initial states, load them from file
     if cfg.initial_states_path != "DEFAULT":
@@ -577,7 +636,7 @@ def run_task(
                                            env_seed=cfg.seed + task_id)
     
     # get the episode already recorded in the environment
-    rollout_dir = f"./rollouts/{cfg.task_suite_name}/change_spawn_{cfg.change_spawn}_train_{cfg.spawn_train_distribution}/run_{cfg.run_number}"
+    rollout_dir = f"./rollouts/{cfg.task_suite_name}/libero_pro_change_spawn_{cfg.change_spawn}_train_{cfg.spawn_train_distribution}/run_{cfg.run_number}"
     episode_full_list = glob.glob(os.path.join(rollout_dir, "*.npy"))
     completed_episode_ids = set()
     for episode in episode_full_list:
@@ -731,6 +790,89 @@ def eval_libero(cfg: GenerateConfig) -> float:
         print("Waiting for debugger attach")
         debugpy.wait_for_client()
     
+    with open(cfg.evaluation_config_path, "r", encoding="utf-8") as f:
+        evaluation_cfg = yaml.safe_load(f)
+    
+    evaluation_cfg["bddl_files_path"] = evaluation_cfg.get("bddl_files_path", "") + "/" + cfg.task_suite_name
+    evaluation_cfg["task_suite_name"] = cfg.task_suite_name
+
+    use_swap = evaluation_cfg.get("use_swap", False)
+    use_object = evaluation_cfg.get("use_object", False)
+    use_language = evaluation_cfg.get("use_language", False)
+    use_task = evaluation_cfg.get("use_task", False)
+    use_environment = evaluation_cfg.get("use_environment", False)
+
+    # Step 1: Check if only one of the use_xxx flags is True
+    if sum([use_swap, use_object, use_language, use_task, use_environment]) > 1:
+        # If more than one flag is True, use the temp environment
+        bddl_file_path = evaluation_cfg.get("bddl_files_path", "") + cfg.task_suite_name + "_temp/"
+
+        init_file_path = evaluation_cfg.get("init_file_dir", "") + cfg.task_suite_name + "_temp/"
+
+        # Check if the directories exist and the log.txt file contents match
+        if not os.path.exists(bddl_file_path) or not os.path.exists(init_file_path):
+            # If directories don't exist, create them and the log.txt file
+            os.makedirs(init_file_path, exist_ok=True)
+            os.makedirs(bddl_file_path, exist_ok=True)
+
+            # Create the log.txt dynamically based on current flag values
+            log_content = f"{use_swap},{use_object},{use_language},{use_task},{use_environment}"
+            with open(os.path.join(bddl_file_path, "log.txt"), "w") as log_file:
+                log_file.write(log_content)  # Write the dynamic state to the log file
+
+            perturbation.create_env(configs=evaluation_cfg)
+        else:
+            # If directories exist, check the contents of the log.txt file
+            with open(os.path.join(bddl_file_path, "log.txt"), "r") as log_file:
+                log_contents = log_file.read().strip()
+
+            # Define the expected log content based on the current flags
+            expected_log = f"{use_swap},{use_object},{use_language},{use_task},{use_environment}"
+
+            # If the log contents don't match, clean up and recreate the environment
+            if log_contents != expected_log:
+                # Remove existing files in both directories
+                for folder in [bddl_file_path, init_file_path]:
+                    for root, dirs, files in os.walk(folder, topdown=False):
+                        for name in files:
+                            os.remove(os.path.join(root, name))
+                        for name in dirs:
+                            os.rmdir(os.path.join(root, name))
+                # Create the environment again
+                os.makedirs(init_file_path, exist_ok=True)
+                os.makedirs(bddl_file_path, exist_ok=True)
+
+                # Write the updated log content based on current flags
+                with open(os.path.join(bddl_file_path, "log.txt"), "w") as log_file:
+                    log_file.write(expected_log)  # Write the updated log
+
+                perturbation.create_env(configs=evaluation_cfg)
+
+        # Update task_suite_name with "_temp" suffix
+        cfg.task_suite_name = cfg.task_suite_name + "_temp"
+
+    # Step 2: Handle the case when only one use_xxx flag is True
+    else:
+        if use_swap:
+            perturb_key = "use_swap"
+        elif use_object:
+            perturb_key = "use_object"
+        elif use_language:
+            perturb_key = "use_language"
+        elif use_task:
+            perturb_key = "use_task"
+        elif use_environment:
+            perturb_key = "use_environment"
+
+        init_file_path = evaluation_cfg.get("init_file_dir", "") + cfg.task_suite_name + "_" + evaluation_cfg.get(
+            "perturbation_mapping", {}).get(perturb_key, "")
+
+        if not os.path.exists(init_file_path):
+            perturbation.create_env(configs=evaluation_cfg)
+
+        cfg.task_suite_name = cfg.task_suite_name + "_" + evaluation_cfg.get("perturbation_mapping", {}).get(perturb_key, "")
+    
+    
     # Validate configuration
     validate_config(cfg)
 
@@ -738,7 +880,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
     set_seed_everywhere(cfg.seed)
 
     # Initialize model and components
-    model, action_head, proprio_projector, noisy_action_projector, processor = initialize_model(cfg)
+    model, action_head, proprio_projector, noisy_action_projector, processor = initialize_model(cfg, evaluation_cfg)
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
@@ -748,7 +890,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
-    task_suite = benchmark_dict[cfg.task_suite_name]()
+    task_suite = benchmark_dict[evaluation_cfg.get("task_suite_name", "")]()
     num_tasks = task_suite.n_tasks
 
     log_message(f"Task suite: {cfg.task_suite_name}", log_file)

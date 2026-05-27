@@ -153,3 +153,4 @@ rollouts/
 wandb/
 vla-scripts/*.out
 *txt
+*out

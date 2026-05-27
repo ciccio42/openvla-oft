@@ -256,9 +256,9 @@ dependencies:
       - toml==0.10.2
       - tomli==2.2.1
       - tomlkit==0.13.3
-      - torch==2.2.0+cu118
+      - torch==2.2.0+cu121
       - torchaudio==2.2.0
-      - torchvision==0.17.0+cu118
+      - torchvision==0.17.0+cu121
       - tqdm==4.67.1
       - traitlets==5.14.3
       - transformers==4.40.1
