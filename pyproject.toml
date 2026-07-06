@@ -48,11 +48,10 @@ dependencies = [
     # "torchvision==0.17.0",
     # "torchaudio==2.2.0",
     # "transformers @ git+https://github.com/moojink/transformers-openvla-oft.git",  # IMPORTANT: Use this fork for bidirectional attn (for parallel decoding)
-    "wandb",
-    "tensorflow==2.15.0",
+    "tensorflow==2.16.1",   # 2.15.0 has no linux/aarch64 wheel on PyPI; bumped for arm64 (GB10/Grace) hosts
     "tensorflow_datasets==4.9.3",
-    "tensorflow_graphics==2021.12.3",
-    "dlimp @ git+https://github.com/moojink/dlimp_openvla",
+    # "tensorflow_graphics==2021.12.3",  # pulls in tensorflow-addons, archived/no aarch64 wheels; only used by prismatic/vla/datasets/rlds/oxe (OXE training data), not needed for inference
+    # "dlimp @ git+https://github.com/moojink/dlimp_openvla",  # pins tensorflow==2.15.0 internally (no aarch64 wheel) -- install separately with --no-deps, see README/docs
     "diffusers",
     "imageio",
     "uvicorn",
