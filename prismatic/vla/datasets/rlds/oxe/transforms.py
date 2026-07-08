@@ -855,6 +855,7 @@ def aloha_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 OXE_STANDARDIZATION_TRANSFORMS = {
     # MIVIA datasets
     "ur5e_pick_place": ur5e_pick_place_dataset_transform,
+    "real_ur5e_pick_place_delta_removed_0_5_10_15": ur5e_pick_place_dataset_transform,
     "ur5e_pick_place_abs_pose": ur5e_pick_place_dataset_transform,
     "ur5e_pick_place_delta_removed_0_5_10_15": ur5e_pick_place_dataset_transform,
     "ur5e_pick_place_delta_all": ur5e_pick_place_dataset_transform,

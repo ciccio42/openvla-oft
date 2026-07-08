@@ -5,6 +5,7 @@ Fine-tunes OpenVLA via LoRA.
 """
 
 import os
+import socket
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -69,14 +70,25 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def seed_everything(seed=42):
     print(f"Cuda available {torch.cuda.is_available()}")
+    print(f"Hostname {socket.gethostname()}")
     random.seed(seed)
     np.random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    # try:
+    #     torch.use_deterministic_algorithms(True, warn_only=True)
+    # except Exception as exc:
+    #     print(f"Warning: could not enable deterministic algorithms: {exc}")
+    # torch.backends.cuda.matmul.allow_tf32 = False
+    # torch.backends.cudnn.allow_tf32 = False
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    # tf.random.set_seed(seed)
+    # try:
+    #     tf.random.set_seed(seed)
+    #     tf.config.experimental.enable_op_determinism()
+    # except Exception as exc:
+    #     print(f"Warning: could not enable TensorFlow determinism: {exc}")
 
 @dataclass
 class FinetuneConfig:

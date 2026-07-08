@@ -6,9 +6,9 @@
 #SBATCH --ntasks-per-node=1           # Only ONE task per node!
 #SBATCH --gres=gpu:4                 # Request 1 GPUs per node
 #SBATCH --cpus-per-task=32             # Adjust for data loading, etc.
-#SBATCH --exclude=tnode[01-17]
-#SBATCH --exclude=gnode14
+#SBATCH --exclude=gnode14,gnode05
 #SBATCH --export=ALL
+
 
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 export PATH=$CUDA_HOME/bin:$PATH

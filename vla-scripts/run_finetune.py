@@ -12,10 +12,12 @@ BASE_MODEL_NAME = "openvla-7b"
 USE_PROPRIO = True  # Set to True if you want to use proprioceptive data
 OLD_RESUME_STEP = -1  # Set to -1 if you want to start from scratch
 RESUME = False
-RESUME_STEP = 0
+RESUME_STEP = -1
 START_ITERATION = 1  # Starting iteration number
 RUN_ROOT_DIR = "/mnt/beegfs/frosa/checkpoint_save_folder/checkpoint_save_folder/open_vla/cuda-128/seed_7"
-DATASET_NAME = "ur5e_pick_place_rm_12_13_14_15" 
+DATASET_NAME = "real_ur5e_pick_place_delta_removed_0_5_10_15"
+# "real_ur5e_pick_place_delta_removed_0_5_10_15" 
+# "real_ur5e_pick_place_delta_all" 
 # "ur5e_pick_place_rm_12_13_14_15"
 # "ur5e_pick_place_rm_central_spawn" 
 # "ur5e_pick_place_rm_one_spawn" 

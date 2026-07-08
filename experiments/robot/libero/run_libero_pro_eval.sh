@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -A did_robot_learning_359
-#SBATCH --partition=aiq
+#SBATCH --partition=gpuq
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
@@ -11,7 +11,11 @@ export MUJOCO_PY_MUJOCO_PATH="/home/rsofnc000/.mujoco/mujoco210"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/rsofnc000/.mujoco/mujoco210/bin
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 
-# Add the path to LIBERO folder to PYTHONPATH
+# Add the path to the LIBERO-Pro fork first so its extra object/task assets
+# (e.g. bigger_alphabet_soup, red_alphabet_soup, ...) shadow the vanilla LIBERO
+# package, which is also installed (editable) and would otherwise be resolved
+# first and lacks these object classes, causing KeyError in OBJECTS_DICT.
+export PYTHONPATH=/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/openvla-oft/experiments/robot/libero/LIBERO_PRO:$PYTHONPATH
 export PYTHONPATH=$PYTHONPATH:/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/LIBERO
 export PYTHONPATH=$PYTHONPATH:/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/openvla-oft/transformers-openvla-oft
 export LIBERO_CONFIG_PATH="/mnt/beegfs/frosa/.libero_pro"
@@ -32,9 +36,8 @@ srun torchrun --standalone --nnodes 1 --nproc-per-node 1 run_libero_pro_eval.py 
     --wandb_project "Open_VLA_OFT_finetune" \
     --run_id_note ${ID_NOTE} \
     --task_suite_name "libero_object" \
-    --initial_states_path "/mnt/beegfs/frosa/Multi-Task-LFD-Framework/repo/openvla-oft/experiments/robot/libero/LIBERO_PRO/libero/libero/init_files/libero_goal_swap" \
     --run_number ${RUN_ID} \
     --change_spawn False \
     --spawn_train_distribution False \
-    --debug True
+    --debug False
  

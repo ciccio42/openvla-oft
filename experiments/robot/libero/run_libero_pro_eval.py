@@ -19,10 +19,11 @@ import yaml
 import draccus
 import numpy as np
 import tqdm
-from libero.libero import benchmark
+# from libero.libero import benchmark
 from PIL import Image
 import wandb
 from LIBERO_PRO import perturbation
+from LIBERO_PRO.libero.libero import benchmark
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
@@ -388,7 +389,8 @@ def run_episode(
 
     # Set initial state if provided
     if initial_state is not None:
-        obs = env.set_init_state(initial_state)
+        # obs = env.set_init_state(initial_state)
+        pass
     else:
         # env.set_init_state(initial_state)
         obs =  env.reset() #env.get_observation()
@@ -490,7 +492,8 @@ def run_episode(
 
             # Execute action in environment
             obs, reward, done, info = env.step(action.tolist())
-            pil_img = Image.fromarray(obs['agentview_image'])
+            # vertical flip the image
+            pil_img = Image.fromarray(obs['agentview_image'][::-1, ::-1])
             pil_img.save(os.path.join(cfg.local_log_dir, f"step.png"))
             if done:
                 success = True
@@ -616,12 +619,13 @@ def run_task(
     noisy_action_projector=None,
     total_episodes=0,
     total_successes=0,
+    evaluation_cfg=None,
     log_file=None,
 ):
     """Run evaluation for a single task."""
     # Get task
     task = task_suite.get_task(task_id)
-
+    
     # Get initial states
     # load default initial states
     
@@ -793,14 +797,13 @@ def eval_libero(cfg: GenerateConfig) -> float:
     with open(cfg.evaluation_config_path, "r", encoding="utf-8") as f:
         evaluation_cfg = yaml.safe_load(f)
     
-    evaluation_cfg["bddl_files_path"] = evaluation_cfg.get("bddl_files_path", "") + "/" + cfg.task_suite_name
-    evaluation_cfg["task_suite_name"] = cfg.task_suite_name
-
     use_swap = evaluation_cfg.get("use_swap", False)
     use_object = evaluation_cfg.get("use_object", False)
     use_language = evaluation_cfg.get("use_language", False)
     use_task = evaluation_cfg.get("use_task", False)
     use_environment = evaluation_cfg.get("use_environment", False)
+
+    evaluation_cfg["task_suite_name"] = cfg.task_suite_name
 
     # Step 1: Check if only one of the use_xxx flags is True
     if sum([use_swap, use_object, use_language, use_task, use_environment]) > 1:
@@ -872,6 +875,8 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
         cfg.task_suite_name = cfg.task_suite_name + "_" + evaluation_cfg.get("perturbation_mapping", {}).get(perturb_key, "")
     
+    evaluation_cfg["bddl_files_path"] = evaluation_cfg.get("bddl_files_path", "") + "/" + cfg.task_suite_name + evaluation_cfg.get("perturbation_mapping", {}).get(perturb_key, "")
+    
     
     # Validate configuration
     validate_config(cfg)
@@ -890,7 +895,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
-    task_suite = benchmark_dict[evaluation_cfg.get("task_suite_name", "")]()
+    task_suite = benchmark_dict[cfg.task_suite_name]()
     num_tasks = task_suite.n_tasks
 
     log_message(f"Task suite: {cfg.task_suite_name}", log_file)
@@ -910,6 +915,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
             noisy_action_projector,
             total_episodes,
             total_successes,
+            evaluation_cfg,
             log_file,
         )
 

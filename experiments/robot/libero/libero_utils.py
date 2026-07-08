@@ -151,6 +151,7 @@ def get_libero_env(
         env = OffScreenRenderEnv(**env_args)
         seed = 0 if env_seed is None else int(env_seed)
         env.seed(seed)  # Seed controls object placement stochasticity at reset.
+        env.reset()
         return env, task_description
 
     # Resample modified BDDL until scene is physically valid at reset.

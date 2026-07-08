@@ -15,6 +15,10 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
     ],
 
+    'real_ur5e_pick_place_delta_removed_0_5_10_15':[
+            ("real_ur5e_pick_place_delta_removed_0_5_10_15", 1.0),                                #
+    ],
+
     'ur5e_pick_place':[
         ("ur5e_pick_place", 1.0),                                #
     ],
